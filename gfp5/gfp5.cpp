@@ -53,7 +53,7 @@ static std::string header()
 static std::string usage()
 {
 	std::ostringstream ss;
-	ss << "Usage: gfp5 [b_min]    b_min is the start of the b search (default 0)" << std::endl << std::endl;
+	ss << "Usage: gfp5 [b_min]    b_min is the start of the b search (in T (10^12) values, default 0)" << std::endl << std::endl;
 	return ss.str();
 }
 
@@ -215,7 +215,7 @@ int main(int argc, char * argv[])
 	mpz_t b2n, gfn, two, r; mpz_inits(b2n, gfn, two, r, nullptr);
 	mpz_set_ui(two, 2);
 
-	uint64_t b_start = uint64_t(1e15 * b_min); b_start /= pattern_mod; b_start *= pattern_mod;
+	uint64_t b_start = uint64_t(1e12 * b_min); b_start /= pattern_mod; b_start *= pattern_mod;
 
 	uint64_t b_ctx = 0;
 	std::ifstream ctxFile("gfp5.ctx");
