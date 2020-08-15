@@ -1,0 +1,10 @@
+CC = g++ -m64 -std=c++17
+CFLAGS = -Wall -Wextra -fexceptions
+RFLAGS = -O3
+
+EXEC = gfp6
+
+build: $(EXEC)
+
+$(EXEC): *.cpp
+	$(CC) $(CFLAGS) $(RFLAGS) -static $^ -lgmp -o $@
