@@ -91,7 +91,7 @@ inline uint64_t barrett_mul(const uint64_t x, const uint64_t y, const uint64_t p
 	return r;
 }
 
-inline bool prp(const uint64_t n) // n odd
+inline bool prp(const uint64_t n)	// n must be odd, 2-prp test
 {
 	const uint64_t e = n - 1;
 
@@ -178,10 +178,10 @@ int main(int argc, char * argv[])
 	const int b_min = (argc > 1) ? std::atoi(argv[1]) : 0;
 
 	// weights: 17: 0.117647, 5: 0.4, 2: 0.5, 3: 0.666667
-	// 120, 136, 256, 306, 340, 426, 460, 510 = 2 * 3 * 5 * 17
+	// The pattern is 0, 120, 136, 256, 306, 340, 426, 460 (mod 510 = 2 * 3 * 5 * 17)
 	static const size_t pattern_size = 8;
 	static const uint16_t pattern_mod = 510;
-	static const uint16_t pattern[8] = { 120, 16, 120, 50, 34, 86, 34, 50 };
+	static const uint16_t pattern_step[8] = { 120, 16, 120, 50, 34, 86, 34, 50 };
 
 	// weights: 193: 0.673575, 97: 0.680412, 257: 0.754864
 	def_sieve(193); def_sieve(97); def_sieve(257);
@@ -240,7 +240,7 @@ int main(int argc, char * argv[])
 
 	for (size_t i = 0; true; ++i)
 	{
-		b += pattern[i % pattern_size];
+		b += pattern_step[i % pattern_size];
 		if (b >= (1ull << 61)) break;
 
 		if (check_sieve(b, 193)) continue;
@@ -320,7 +320,7 @@ int main(int argc, char * argv[])
 			mpz_mul(b2n, b2n, b2n);
 			mpz_add_ui(gfn, b2n, 1);
 			mpz_powm(r, two, b2n, gfn);
-		} while (mpz_cmp_ui(r, 1) == 0);
+		} while (mpz_cmp_ui(r, 1) == 0);	// 2-prp
 
 		if (n >= 5)
 		{
