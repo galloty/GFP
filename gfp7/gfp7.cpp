@@ -142,7 +142,7 @@ inline bool prp(const uint64_t n)	// n must be odd, 2-prp test
 	uint64_t mask = uint64_t(1) << b;
 
 	uint64_t r = 2;
-	if ((n >> 32) == 0)
+	if ((n >> 32) != 0)
 	{
 		r *= r;							// r = 2^2
 		if ((e & mask) != 0) r += r;	// r <= 2^3
