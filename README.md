@@ -15,4 +15,4 @@ If *g*<sub>*n*</sub> > 1 is the smallest generator of any GFP-*n* then
 *g*<sub>*7*</sub> = 2072005925466 (from Jens Kruse Andersen, May 06 2007).  
 *g*<sub>*8*</sub> = 240164550712338756 (from Kellen Shenton, Aug 13 2020).
 
-The integer sequence is https://oeis.org/A090872.
+This integer sequence is https://oeis.org/A090872.

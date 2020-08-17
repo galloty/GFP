@@ -148,9 +148,10 @@ static void sieveP(uint8_t * const sieve, const uint32_t p)
 #define def_sieve(P)		static uint8_t sieve_##P[P]; sieveP(sieve_##P, P)
 #define check_sieve(b, P)	sieve_##P[b % P] == 1
 
-static void output(const uint64_t b)
+static void output(const uint64_t b, const int n)
 {
-	std::cout << b << std::endl;
+	if (b == 1) std::cout << b << std::endl;
+	else std::cout << b << "\t" << "GFP-" << n << std::endl;
 
 	std::ofstream resFile("gfp5.log", std::ios::app);
 	if (resFile.is_open())
@@ -181,7 +182,7 @@ int main(int argc, char * argv[])
 	// The pattern is 0, 120, 136, 256, 306, 340, 426, 460 (mod 510 = 2 * 3 * 5 * 17)
 	static const size_t pattern_size = 8;
 	static const uint16_t pattern_mod = 510;
-	static const uint16_t pattern_step[8] = { 120, 16, 120, 50, 34, 86, 34, 50 };
+	static const uint16_t pattern_step[pattern_size] = { 120, 16, 120, 50, 34, 86, 34, 50 };
 
 	// weights: 97: 0.680412, 13: 0.769231, 41: 0.829268
 	def_sieve(97); def_sieve(13); def_sieve(41);
@@ -234,8 +235,8 @@ int main(int argc, char * argv[])
 
 	if (b == 0)
 	{
-		output(1);
-		output(2);
+		output(1, 5);
+		output(2, 5);
 	}
 
 	for (size_t i = 0; true; ++i)
@@ -318,15 +319,16 @@ int main(int argc, char * argv[])
 		{
 			mpz_set_ui(b2n, 1); b2n->_mp_d[0] = b;
 
-			bool is_prime = true;
-			for (size_t i = 0; i <= 4; ++i)
+			n = -1;
+			while (true)
 			{
-				mpz_add_ui(gfn, b2n, 1);
-				if (mpz_probab_prime_p(gfn, 10) == 0) { is_prime = false; break; }
+				mpz_add_ui(r, b2n, 1);
+				if (mpz_probab_prime_p(r, 10) == 0) break;
 				mpz_mul(b2n, b2n, b2n);
+				++n;
 			}
 
-			if (is_prime) output(b);
+			if (n >= 4) output(b, n + 1);
 		}
 	}
 
