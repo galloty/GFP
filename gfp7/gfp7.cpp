@@ -293,7 +293,7 @@ int main(int argc, char * argv[])
 
 	mpz_t two; mpz_init_set_ui(two, 2);
 
-	uint64_t b_start = uint64_t(1e12 * b_min); b_start /= pattern_mod; b_start *= pattern_mod;
+	uint64_t b_start = uint64_t(1e12 * b_min);
 
 	if (numThreads != 0)
 	{
@@ -318,6 +318,7 @@ int main(int argc, char * argv[])
 
 	const bool resume = (b_start < b_ctx);
 	if (resume) b_start = b_ctx;
+	b_start /= pattern_mod; b_start *= pattern_mod;
 	std::cout << (resume ? "Resuming from a checkpoint, t" : "T") << "esting from " << b_start << std::endl;
 
 	if (b_start == 0) output(1, 7);
