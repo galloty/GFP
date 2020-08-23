@@ -175,6 +175,10 @@ void mpz_set_ui_128(mpz_t rop, const __uint128_t n)
 	mpz_limbs_finish(rop, count);
 }
 
+#ifdef VALID
+#include "valid.h"
+#endif
+
 static void output(const __uint128_t b, const int n)
 {
 	char b_str[64]; to_string(b, b_str);
@@ -218,10 +222,6 @@ int main(int argc, char * argv[])
 
 	const long long b_min = (argc > 1) ? std::atoll(argv[1]) : 0;
 	const int numThreads = (argc > 2) ? std::atoi(argv[2]) : 0;
-
-#ifdef VALID
-#include "valid.hc"
-#endif
 
 	// weights: 257: 0.0077821, 17: 0.117647, 5: 0.4, 2: 0.5, 3: 0.666667
 	// 6426, 15420, 17476, 21846, 32640, 32896, 43690, 48060, 50116, 59110, 65536, 76330, 91750, 104856, 120276, 131070 = 2 * 3 * 5 * 17 * 257
