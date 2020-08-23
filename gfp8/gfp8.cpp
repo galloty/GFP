@@ -18,11 +18,14 @@ The integer sequence is https://oeis.org/Axxxxxx.
 #include <inttypes.h>
 
 #include <xmmintrin.h>
+#include <x86intrin.h>
 
 #include <gmp.h>
 #include <omp.h>
 
 // #define VALID	true
+// #define PROFILE	true
+// #define PROFILE_COUNT	true
 
 #if defined (_WIN32)	// use Performance Counter
 #include <Windows.h>
@@ -86,7 +89,7 @@ static std::string header()
 #endif
 
 	std::ostringstream ss;
-	ss << "gfp8 0.9.2 " << sysver << ssc.str() << std::endl;
+	ss << "gfp8 0.9.3 " << sysver << ssc.str() << std::endl;
 	ss << "Copyright (c) 2020, Yves Gallot" << std::endl;
 	ss << "gfp8 is free source code, under the MIT license." << std::endl;
 	ss << std::endl;
@@ -120,110 +123,6 @@ inline uint32_t mulmod32(const uint32_t x, const uint32_t y, const uint32_t m)
 {
 	return uint32_t((x * uint64_t(y)) % m);
 }
-
-/* Not faster than GMP
-inline __uint128_t addmod128(const __uint128_t x, const __uint128_t y, const __uint128_t m)
-{
-	const __uint128_t c = (x >= m - y) ? m : 0;
-	return x + y - c;
-}
-
-inline int ilog2(const __uint128_t x)
-{
-	if ((x >> 64) == 0) return 63 - __builtin_clzll(uint64_t(x));
-	else return 127 - __builtin_clzll(uint64_t(x >> 64));
-}
-
-// Barrett's product: let n = 95, r = ceil(log2(p)), p_shift = r - 2 = ceil(log2(p)) - 1, t = n + 1 = 96,
-// p_inv = floor(2^(s + t) / p). Then the number of iterations h = 1.
-// We must have x^2 < alpha.p with alpha = 2^(n-2). If p <= 2^(n-2) = 2^93 then x^2 < p^2 <= alpha.p.
-
-inline __uint128_t barrett_inv_93(const __uint128_t p, int & p_shift)
-{
-	p_shift = ilog2(p) - 1;		// p_shift < 96
-
-	__uint128_t n = __uint128_t(1) << (32 + p_shift);
-
-	const __uint128_t d_0 = n / p;
-	n = (n - d_0 * p) << 32;
-	const __uint128_t d_1 = n / p;
-	n = (n - d_1 * p) << 32;
-	const __uint128_t d_2 = n / p;
-
-	return (d_0 << 64) + (d_1 << 32) + d_2;
-}
-
-inline __uint128_t mul_64_64(const uint64_t x, const uint64_t y) { return x * __uint128_t(y); }
-
-inline __uint128_t mul_hi_96(const __uint128_t x, const __uint128_t y)
-{
-	const uint64_t x_l = uint64_t(x); const uint32_t x_h = uint32_t(x >> 64);
-	const uint64_t y_l = uint64_t(y); const uint32_t y_h = uint32_t(y >> 64);
-	const __uint128_t z_l = x_l * __uint128_t(y_l);
-	const uint64_t z_h = x_h * uint64_t(y_h);
-	const __uint128_t z_m = ((z_l >> 64) | (__uint128_t(z_h) << 64)) + y_h * __uint128_t(x_l) + x_h * __uint128_t(y_l);
-	return z_m >> 32;
-}
-
-inline __uint128_t barrett_square_93(const __uint128_t x, const __uint128_t p, const __uint128_t p_inv, const int p_shift)
-{
-	const uint64_t x_l = uint64_t(x); const uint64_t x_h = uint64_t(x >> 64);
-	const __uint128_t x2_0 = mul_64_64(x_l, x_l);
-	const __uint128_t x2_64 = mul_64_64(x_l, x_h + x_h) + (__uint128_t(x_h * x_h) << 64);
-	const __uint128_t _x2_l = uint64_t(x2_0);
-	const __uint128_t _x2_h = x2_64 + (x2_0 >> 64);
-	const __uint128_t x2_l = _x2_l | (_x2_h << 64);
-	const __uint128_t x2_h = _x2_h >> 64;
-
-	const __uint128_t q_p = (x2_l >> p_shift) + (x2_h << (128 - p_shift));
-	const __uint128_t q = mul_hi_96(q_p, p_inv);
-
-	const __uint128_t x2_96 = x2_l & ((__uint128_t(1) << 96) - 1);
-	const __uint128_t qp_96 = (q * p) & ((__uint128_t(1) << 96) - 1);
-	__uint128_t r = (x2_96 - qp_96) & ((__uint128_t(1) << 96) - 1);
-	while (r >= p) r -= p;
-	return r;
-}
-
-inline bool prp(const __uint128_t n)	// n must be odd, 2-prp test
-{
-	const __uint128_t e = n - 1;
-
-	int s; const __uint128_t q = barrett_inv_93(n, s);
-
-	int b = ilog2(e) - 1;
-	__uint128_t mask = __uint128_t(1) << b;
-
-	__uint128_t r = 2;
-	if ((n >> 32) != 0)
-	{
-		r *= r;							// r = 2^2
-		if ((e & mask) != 0) r += r;	// r <= 2^3
-		--b; mask >>= 1;
-
-		r *= r;							// r <= 2^6
-		if ((e & mask) != 0) r += r;	// r <= 2^7
-		--b; mask >>= 1;
-
-		r *= r;							// r <= 2^14
-		if ((e & mask) != 0) r += r;	// r <= 2^15
-		--b; mask >>= 1;
-
-		r *= r;							// r <= 2^30
-		if ((e & mask) != 0) r += r;	// r <= 2^31
-		--b; mask >>= 1;
-	}
-
-	while (b >= 0)
-	{
-		r = barrett_square_93(r, n, q, s);
-		if ((e & mask) != 0) r = addmod128(r, r, n);
-		--b; mask >>= 1;
-	}
-
-	return (r == 1);
-}
-*/
 
 inline __uint128_t mul_hi_95(const __uint128_t x, const uint64_t y_l, const uint32_t y_h)
 {
@@ -355,11 +254,13 @@ int main(int argc, char * argv[])
 	}
 
 	size_t n_thread = 1;
+#ifndef PROFILE
 #pragma omp parallel
 {
 	n_thread = omp_get_num_threads();
 }
 	std::cout << n_thread << " thread(s)" << std::endl;
+#endif
 
 	__uint128_t b_ctx = 0;
 	std::ifstream ctxFile("gfp8.ctx");
@@ -401,29 +302,36 @@ int main(int argc, char * argv[])
 			ctxFile.close();
 		}
 
+#ifndef PROFILE
 #pragma omp parallel for
+#endif
 		for (size_t j = 0; j < n_thread; ++j)
 		{
 			__uint128_t b = b_g + j * slice * pattern_mod;
-			vec b_p; for (size_t i = 0; i < vsize; ++i) b_p[i] = uint16_t(b % step_p[i]);
+			vec b_p; for (size_t k = 0; k < vsize; ++k) b_p[k] = uint16_t(b % step_p[k]);
 
-			mpz_t b2n, r; mpz_init(b2n); mpz_init(r);
+			mpz_t b2n, r; mpz_inits(b2n, r, nullptr);
 
-			for (size_t i = 0; i < slice * pattern_size; ++i)
+#ifdef PROFILE
+#ifdef PROFILE_COUNT
+			size_t count[4]; for (size_t i = 0; i < 4; ++i) count[i] = 0;
+#endif
+			_mm_lfence();
+			const uint64_t t0 = __rdtsc();
+#endif
+			for (size_t i = 0, i_pattern = 0; i < slice * pattern_size; ++i, i_pattern = (i_pattern + 1) % pattern_size)
 			{
-				const size_t i_pattern = i % pattern_size;
-
-				b += pattern_step[i_pattern];
-
 				const vec & psi = pattern_step_p[i_pattern];
 
-#pragma omp simd aligned(b_p, psi, step_p : 16)		// generates xmm instructions
+#pragma omp simd aligned(b_p, psi, step_p : 16)		// generates SSE2 or AVX2 instructions
 				for (size_t k = 0; k < vsize; ++k)
 				{
 					const uint16_t r = b_p[k] + psi[k];
 					const uint16_t p = step_p[k];
 					b_p[k] = (r >= p) ? r - p : r;
 				}
+
+				b += pattern_step[i_pattern];
 #ifdef VALID
 				if ((j != 0) || (i >= test_size)) break;
 				b = b_test[i];
@@ -446,23 +354,41 @@ int main(int argc, char * argv[])
 				  | (sieve_13_41[b_p[1]] != 0)
 				  | (sieve_769[b_p[2]] != 0)
 				  | (sieve_193[b_p[3]] != 0)
-				  | (sieve_641[b_p[4]] != 0)) continue;
-				if ((sieve_449[b_p[5]] != 0)
-				  | (sieve_113[b_p[6]] != 0)
+				  | (sieve_641[b_p[4]] != 0)
+				  | (sieve_449[b_p[5]] != 0)) continue;
+
+				// 15 cycles, 11.5%
+#ifdef PROFILE_COUNT
+				count[0] += 1;
+#endif
+				if ((sieve_113[b_p[6]] != 0)
 				  | (sieve_1153[b_p[7]] != 0)
 				  | (sieve_577[b_p[8]] != 0)
-				  | (sieve_29[b_p[9]] != 0)) continue;
-				if ((sieve_73[b_p[10]] != 0)
-				  | (sieve_11[b_p[11]] != 0)
+				  | (sieve_29[b_p[9]] != 0)
+				  | (sieve_73[b_p[10]] != 0)) continue;
+
+				// 16.5 cycles, 6.4%
+#ifdef PROFILE_COUNT
+				count[1] += 1;
+#endif
+				if ((sieve_11[b_p[11]] != 0)
 				  | (sieve_1409[b_p[12]] != 0)
 				  | (sieve_353[b_p[13]] != 0)
 				  | (sieve_37[b_p[14]] != 0)
 				  | (sieve_89[b_p[15]] != 0)) continue;
 
+				// 17 cycles, 4.1%
+#ifdef PROFILE_COUNT
+				count[2] += 1;
+#endif
+
 #include "check_sieves.hc"
 
-				if ((b & (b - 1)) == 0) continue;	// power of two
-
+				// 30 cycles, 0.2%
+#ifdef PROFILE_COUNT
+				count[3] += 1;
+#endif
+				if ((b & (b - 1)) == 0) continue;	// power of two are 2-prp
 				mpz_set_ui_128(b2n, b);
 
 				const int n_min = 6;
@@ -491,9 +417,19 @@ int main(int argc, char * argv[])
 
 					if (n >= n_min) output(b, n);
 				}
+
+				// 39.5 cycles
 			}
 
-			mpz_clear(b2n); mpz_clear(r);
+#ifdef PROFILE
+			const uint64_t dtT = __rdtsc() - t0;
+			std::cout << dtT / double(slice * pattern_size) << " cycles";
+#ifdef PROFILE_COUNT
+			for (size_t i = 0; i < 4; ++i) std::cout << ", " << 100.0 * count[i] / double(slice * pattern_size) << "%";
+#endif
+			std::cout << std::endl;
+#endif
+			mpz_clears(b2n, r, nullptr);
 		}
 #ifdef VALID
 		break;

@@ -1,3 +1,10 @@
+/*
+Copyright 2020, Yves Gallot
+
+gfp8 is free source code, under the MIT license (see LICENSE). You can redistribute, use and/or modify it.
+Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.
+*/
+
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
@@ -10,6 +17,9 @@
 #include "prmgen.h"
 
 inline int ilog2(const uint64_t x) { return 63 - __builtin_clzll(x); }
+
+// Torbjörn Granlund and Peter L. Montgomery, Division by Invariant Integers Using Multiplication
+// In Proceedings of the SIGPLAN '94 Conference on Programming Language Design and Implementation, 1994, p 61-72
 
 struct GM95 { __uint128_t m; int sh; };
 
@@ -54,8 +64,8 @@ static void gen_primes(std::vector<uint32_t> & primes, const size_t count)
 
 	for (uint32_t p = uint32_t(prmGen.first()); p < 1000000; p = uint32_t(prmGen.next()))
 	{
-		if ((p == 2) || (p == 3) || (p == 5) || (p == 17) || (p == 257)) continue;
-		if ((p == 7) || (p == 13) || (p == 41) || (p == 97)) continue;
+		if ((p == 2) || (p == 3) || (p == 5) || (p == 17) || (p == 257)) continue;		// Fermat primes
+		if ((p == 7) || (p == 13) || (p == 41) || (p == 97)) continue;					// 7 * 97 and 13 * 41 are 2-prime sieves
 
 		uint32_t w_p;
 		if (p == 2) w_p = 1;
@@ -83,6 +93,7 @@ static void gen_primes(std::vector<uint32_t> & primes, const size_t count)
 		primes.push_back(p);
 		size += p;
 		p_max = std::max(p_max, p);
+		// std::cout << p << ": " << pair.second << std::endl;
 		if (++c == count) break;
 	}
 
@@ -111,6 +122,7 @@ int main()
 	{
 		for (const uint32_t & p : primes)
 		{
+			// 769, 193, 641, 449, 113, 1153, 577, 29, 73, 11, 1409, 353, 37, 89 are included in the fast sieve
 			if ((p == 769) || (p == 193) || (p == 641) || (p == 449) || (p == 113) || (p == 1153)) continue;
 			if ((p == 577) || (p == 29) || (p == 73) || (p == 11) || (p == 1409) || (p == 353) || (p == 37) || (p == 89)) continue;
 			csFile << "check_sieve(b, " << p << ");" << std::endl;
@@ -123,6 +135,7 @@ int main()
 	{
 		for (const uint32_t & p : primes)
 		{
+			// 769, 193, 641, 449, 113, 1153, 577, 29, 73, 11, 1409, 353, 37, 89 are included in the fast sieve
 			if ((p == 769) || (p == 193) || (p == 641) || (p == 449) || (p == 113) || (p == 1153)) continue;
 			if ((p == 577) || (p == 29) || (p == 73) || (p == 11) || (p == 1409) || (p == 353) || (p == 37) || (p == 89)) continue;
 			gm_print_95(p, mpFile);
