@@ -182,6 +182,7 @@ inline void mpz_set_ui_128(mpz_t rop, const __uint128_t n)
 
 #ifdef VALID
 #include "valid.h"
+static bool is_valid = true;
 #endif
 
 static void output(const __uint128_t b, const int n, const std::string & extension)
@@ -265,7 +266,7 @@ int main(int argc, char * argv[])
 	}
 
 	size_t n_thread = 1;
-#ifndef PROFILE
+#if !defined(PROFILE) && !defined(VALID)
 #pragma omp parallel
 {
 	n_thread = omp_get_num_threads();
@@ -326,7 +327,7 @@ int main(int argc, char * argv[])
 			}
 		}
 
-#ifndef PROFILE
+#if !defined(PROFILE) && !defined(VALID)
 #pragma omp parallel for
 #endif
 		for (size_t j = 0; j < n_thread; ++j)
@@ -357,6 +358,8 @@ int main(int argc, char * argv[])
 
 				b += pattern_step[i_pattern];
 #ifdef VALID
+				if (!is_valid) { std::cout << "error" << std::endl; exit(1); }
+				is_valid = false;
 				if ((j != 0) || (i >= test_size)) break;
 				b = b_test[i];
 				for (size_t i = 0; i < vsize; ++i) b_p[i] = uint16_t(b % step_p[i]);
@@ -367,11 +370,7 @@ int main(int argc, char * argv[])
 					if (b % pattern_mod == pattern_val) bpat = true;
 					pattern_val += pattern_step[j];
 				}
-				if (!bpat)
-				{
-					std::cout << "pattern error" << std::endl;
-					break;
-				}
+				if (!bpat) { std::cout << "pattern error" << std::endl; exit(1); }
 				std::cout << i + 1 << ": ";
 #endif
 #if CHECK_COUNT == 4
@@ -442,7 +441,13 @@ int main(int argc, char * argv[])
 						++n;
 					}
 
-					if (n >= n_min) output(b, n, extension);
+					if (n >= n_min)
+					{
+						output(b, n, extension);
+#ifdef VALID
+						is_valid = true;
+#endif
+					}
 				}
 
 				// 39 cycles
