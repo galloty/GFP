@@ -102,12 +102,12 @@ static void gen_primes(std::vector<uint32_t> & primes, const size_t count)
 
 int main()
 {
-	const size_t count = 255;
+	const size_t count = 260;
 	std::vector<uint32_t> primes;
 
 	gen_primes(primes, count);
 
-	std::ofstream dsFile("def_sieves.hc");
+	std::ofstream dsFile("../def_sieves.hc");
 	if (dsFile.is_open())
 	{
 		for (const uint32_t & p : primes)
@@ -117,7 +117,7 @@ int main()
 		dsFile.close();
 	}
 
-	std::ofstream csFile("check_sieves.hc");
+	std::ofstream csFile("../check_sieves.hc");
 	if (csFile.is_open())
 	{
 		for (const uint32_t & p : primes)
@@ -130,7 +130,7 @@ int main()
 		csFile.close();
 	}
 
-	std::ofstream mpFile("mods_p.h");
+	std::ofstream mpFile("../mods_p.h");
 	if (mpFile.is_open())
 	{
 		for (const uint32_t & p : primes)

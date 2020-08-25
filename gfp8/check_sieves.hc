@@ -239,3 +239,8 @@ check_sieve(b, 3793);
 check_sieve(b, 7841);
 check_sieve(b, 15937);
 check_sieve(b, 64513);
+check_sieve(b, 65537);
+check_sieve(b, 16193);
+check_sieve(b, 1801);
+check_sieve(b, 773);
+check_sieve(b, 3889);

@@ -5,7 +5,7 @@ gfp8 is free source code, under the MIT license (see LICENSE). You can redistrib
 Please give feedback to the authors if improvement is realized. It is distributed in the hope that it will be useful.
 
 gfp8 searches for Generalized Fermat Progressions with length >= 8: numbers b such that b^{2^k} + 1 are primes for k = 0...7.
-The integer sequence is https://oeis.org/Axxxxxx.
+The integer sequence is https://oeis.org/A337364.
 */
 
 #include <cstdint>
@@ -91,7 +91,7 @@ static std::string header()
 #endif
 
 	std::ostringstream ss;
-	ss << "gfp8 0.9.3 " << sysver << ssc.str() << std::endl;
+	ss << "gfp8 0.9.4 " << sysver << ssc.str() << std::endl;
 	ss << "Copyright (c) 2020, Yves Gallot" << std::endl;
 	ss << "gfp8 is free source code, under the MIT license." << std::endl;
 	ss << std::endl;
@@ -170,7 +170,7 @@ static void sieveP2(uint8_t * const sieve, const uint32_t p1, const uint32_t p2)
 
 #define check_sv(P, ind)	(sieve_##P[b_p[ind]] != 0)
 
-void mpz_set_ui_128(mpz_t rop, const __uint128_t n)
+inline void mpz_set_ui_128(mpz_t rop, const __uint128_t n)
 {
 	const uint64_t n_h = uint64_t(n >> 64);
 	const size_t count = (n_h == 0) ? 1 : 2;
@@ -411,7 +411,7 @@ int main(int argc, char * argv[])
 
 #include "check_sieves.hc"
 
-				// 31 cycles, 0.2%
+				// 30 cycles, 0.2%
 #ifdef PROFILE_COUNT
 				count[3] += 1;
 #endif
@@ -445,7 +445,7 @@ int main(int argc, char * argv[])
 					if (n >= n_min) output(b, n, extension);
 				}
 
-				// 39.5 cycles
+				// 39 cycles
 			}
 
 #ifdef PROFILE

@@ -253,3 +253,8 @@ def_sieve(3793);
 def_sieve(7841);
 def_sieve(15937);
 def_sieve(64513);
+def_sieve(65537);
+def_sieve(16193);
+def_sieve(1801);
+def_sieve(773);
+def_sieve(3889);
