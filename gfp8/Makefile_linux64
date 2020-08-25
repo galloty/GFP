@@ -1,6 +1,7 @@
 CC = g++ -m64 -std=c++17
 CFLAGS = -Wall -Wextra -fexceptions -fopenmp
 RFLAGS = -O3
+# RFLAGS = -O3 -march=skylake
 
 EXEC = gfp8
 
@@ -8,3 +9,4 @@ build: $(EXEC)
 
 $(EXEC): *.cpp
 	$(CC) $(CFLAGS) $(RFLAGS) $^ -lgmp -o $@
+	# $(CC) $(CFLAGS) $(RFLAGS) -static $^ libgmp_skylake.a -o $@

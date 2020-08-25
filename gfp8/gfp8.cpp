@@ -27,6 +27,8 @@ The integer sequence is https://oeis.org/Axxxxxx.
 // #define PROFILE	true
 // #define PROFILE_COUNT	true
 
+// #define CHECK_COUNT	5
+
 #if defined (_WIN32)	// use Performance Counter
 #include <Windows.h>
 #else					// otherwise use gettimeofday() instead
@@ -99,8 +101,9 @@ static std::string header()
 static std::string usage()
 {
 	std::ostringstream ss;
-	ss << "Usage: gfp8 [b_min] [numThreads]" << std::endl;
+	ss << "Usage: gfp8 [b_min] [b_max] [numThreads]" << std::endl;
 	ss << "         b_min is the start of the b search (in P (10^15) values, default 0)" << std::endl;
+	ss << "         b_max is the end of the b search (in P (10^15) values, default 2^95)" << std::endl;
 	ss << "         numThreads is the number of threads (default 0 = one thread per logical CPU)" << std::endl << std::endl;
 	return ss.str();
 }
@@ -165,6 +168,8 @@ static void sieveP2(uint8_t * const sieve, const uint32_t p1, const uint32_t p2)
 #define def_sieve(P)		static uint8_t sieve_##P[P]; sieveP1(sieve_##P, P)
 #define check_sieve(b, P)	if (sieve_##P[mod_##P(b)] != 0) continue;
 
+#define check_sv(P, ind)	(sieve_##P[b_p[ind]] != 0)
+
 void mpz_set_ui_128(mpz_t rop, const __uint128_t n)
 {
 	const uint64_t n_h = uint64_t(n >> 64);
@@ -179,7 +184,7 @@ void mpz_set_ui_128(mpz_t rop, const __uint128_t n)
 #include "valid.h"
 #endif
 
-static void output(const __uint128_t b, const int n)
+static void output(const __uint128_t b, const int n, const std::string & extension)
 {
 	char b_str[64]; to_string(b, b_str);
 
@@ -194,18 +199,20 @@ static void output(const __uint128_t b, const int n)
 #endif
 		std::cout << b_str << "\t" << "GFP-" << n << std::endl;
 
-		std::ofstream resFile("gfp8.log", std::ios::app);
-		if (resFile.is_open())
+		const std::string logFilename = "gfp8" + extension + std::string(".log");
+		std::ofstream logFile(logFilename, std::ios::app);
+		if (logFile.is_open())
 		{
-			resFile << b_str << "\t" << "GFP-" << n << std::endl;
-			resFile.flush();
-			resFile.close();
+			logFile << b_str << "\t" << "GFP-" << n << std::endl;
+			logFile.flush();
+			logFile.close();
 		}
 	}
 
 	if (n >= 8)
 	{
-		std::ofstream resFile("gfp8.res", std::ios::app);
+		const std::string resFilename = "gfp8" + extension + std::string(".res");
+		std::ofstream resFile(resFilename, std::ios::app);
 		if (resFile.is_open())
 		{
 			resFile << b_str << std::endl;
@@ -221,7 +228,11 @@ int main(int argc, char * argv[])
 	std::cout << usage();
 
 	const long long b_min = (argc > 1) ? std::atoll(argv[1]) : 0;
-	const int numThreads = (argc > 2) ? std::atoi(argv[2]) : 0;
+	const long long b_max = (argc > 2) ? std::atoll(argv[2]) : 39614081257133ll;
+	const int numThreads = (argc > 3) ? std::atoi(argv[3]) : 0;
+
+	std::stringstream ss; ss << "_" << b_min << "_" << b_max;
+	const std::string extension = ss.str();
 
 	// weights: 257: 0.0077821, 17: 0.117647, 5: 0.4, 2: 0.5, 3: 0.666667
 	// 6426, 15420, 17476, 21846, 32640, 32896, 43690, 48060, 50116, 59110, 65536, 76330, 91750, 104856, 120276, 131070 = 2 * 3 * 5 * 17 * 257
@@ -245,7 +256,7 @@ int main(int argc, char * argv[])
 
 	mpz_t two; mpz_init_set_ui(two, 2);
 
-	__uint128_t b_start = __uint128_t(1e15 * b_min);
+	__uint128_t b_start = __uint128_t(1e15 * b_min), b_end = __uint128_t(1e15 * b_max) + 1;
 
 	if (numThreads != 0)
 	{
@@ -262,44 +273,57 @@ int main(int argc, char * argv[])
 	std::cout << n_thread << " thread(s)" << std::endl;
 #endif
 
+	const size_t slice = size_t(1) << 24;
+
 	__uint128_t b_ctx = 0;
-	std::ifstream ctxFile("gfp8.ctx");
-	if (ctxFile.is_open())
 	{
-		uint64_t b_ctx_l = 0, b_ctx_h = 0;
-		ctxFile >> b_ctx_l; ctxFile >> b_ctx_h;
-		b_ctx = b_ctx_l | (__uint128_t(b_ctx_h) << 64);
-		ctxFile.close();
+		const std::string ctxFilename = "gfp8" + extension + std::string(".ctx");
+		std::ifstream ctxFile(ctxFilename);
+		if (ctxFile.is_open())
+		{
+			uint64_t b_ctx_l = 0, b_ctx_h = 0;
+			ctxFile >> b_ctx_l; ctxFile >> b_ctx_h;
+			b_ctx = b_ctx_l | (__uint128_t(b_ctx_h) << 64);
+			ctxFile.close();
+		}
 	}
 
 	const bool resume = (b_start < b_ctx);
 	if (resume) b_start = b_ctx;
 	b_start /= pattern_mod; b_start *= pattern_mod;
-	char b_start_str[64]; to_string(b_start, b_start_str);
-	std::cout << (resume ? "Resuming from a checkpoint, t" : "T") << "esting from " << b_start_str << std::endl;
+	b_end /= pattern_mod; b_end *= pattern_mod; b_end += slice * pattern_mod * n_thread;
+	if ((b_end >> 95) != 0) b_end = __uint128_t(1) << 95;
 
-	if (b_start == 0) output(1, 8);
+	char b_start_str[64]; to_string(b_start, b_start_str);
+	char b_end_str[64]; to_string(b_end, b_end_str);
+	std::cout << (resume ? "Resuming from a checkpoint, t" : "T") << "esting from " << b_start_str << " to " << b_end_str << std::endl;
+
+	if (b_start == 0) output(1, 8, extension);
 
 	const timer::time start_time = timer::currentTime();
+#ifdef PROFILE
+	uint64_t dt_min = INT64_MAX, dt_max = 0;
+#endif
 
-	const size_t slice = size_t(1) << 24;
-
-	for (__uint128_t b_g = b_start; (b_g >> 95) == 0; b_g += slice * pattern_mod * n_thread)
+	for (__uint128_t b_g = b_start; b_g < b_end; b_g += slice * pattern_mod * n_thread)
 	{
-		const double dt = timer::diffTime(timer::currentTime(), start_time);
-		if (dt > 1)
 		{
-			char b_g_str[64]; to_string(b_g, b_g_str);
-			std::cout << b_g_str << ", " << int((b_g - b_start) * 86400.0 * 1e-15 / dt) << " P/day             \r" << std::flush;
-		}
+			const double dt = timer::diffTime(timer::currentTime(), start_time);
+			if (dt > 1)
+			{
+				char b_g_str[64]; to_string(b_g, b_g_str);
+				std::cout << b_g_str << ", " << int((b_g - b_start) * 86400.0 * 1e-15 / dt) << " P/day             \r" << std::flush;
+			}
 
-		std::ofstream ctxFile("gfp8.ctx");
-		if (ctxFile.is_open())
-		{
-			const uint64_t b_g_l = uint64_t(b_g), b_g_h = uint64_t(b_g >> 64);
-			ctxFile << b_g_l << " " << b_g_h << std::endl;
-			ctxFile.flush();
-			ctxFile.close();
+			const std::string ctxFilename = "gfp8" + extension + std::string(".ctx");
+			std::ofstream ctxFile(ctxFilename);
+			if (ctxFile.is_open())
+			{
+				const uint64_t b_g_l = uint64_t(b_g), b_g_h = uint64_t(b_g >> 64);
+				ctxFile << b_g_l << " " << b_g_h << std::endl;
+				ctxFile.flush();
+				ctxFile.close();
+			}
 		}
 
 #ifndef PROFILE
@@ -350,41 +374,44 @@ int main(int argc, char * argv[])
 				}
 				std::cout << i + 1 << ": ";
 #endif
-				if ((sieve_7_97[b_p[0]] != 0)
-				  | (sieve_13_41[b_p[1]] != 0)
-				  | (sieve_769[b_p[2]] != 0)
-				  | (sieve_193[b_p[3]] != 0)
-				  | (sieve_641[b_p[4]] != 0)
-				  | (sieve_449[b_p[5]] != 0)) continue;
+#if CHECK_COUNT == 4
+				if (check_sv(7_97, 0) | check_sv(13_41, 1) | check_sv(769, 2) | check_sv(193, 3)) continue;
+				if (check_sv(641, 4) | check_sv(449, 5) | check_sv(113, 6) | check_sv(1153, 7)) continue;
+				if (check_sv(577, 8) | check_sv(29, 9) | check_sv(73, 10) | check_sv(11, 11)) continue;
+				if (check_sv(1409, 12) | check_sv(353, 13) | check_sv(37, 14) | check_sv(89, 15)) continue;
+#elif CHECK_COUNT == 6
+				if (check_sv(7_97, 0) | check_sv(13_41, 1) | check_sv(769, 2) | check_sv(193, 3) | check_sv(641, 4) | check_sv(449, 5)) continue;
+				if (check_sv(113, 6) | check_sv(1153, 7) | check_sv(577, 8) | check_sv(29, 9) | check_sv(73, 10)) continue;
+				if (check_sv(11, 11) | check_sv(1409, 12) | check_sv(353, 13) | check_sv(37, 14) | check_sv(89, 15)) continue;
+#elif CHECK_COUNT == 8
+				if (check_sv(7_97, 0) | check_sv(13_41, 1) | check_sv(769, 2) | check_sv(193, 3)
+				  | check_sv(641, 4) | check_sv(449, 5) | check_sv(113, 6) | check_sv(1153, 7)) continue;
+				if (check_sv(577, 8) | check_sv(29, 9) | check_sv(73, 10) | check_sv(11, 11)
+				  | check_sv(1409, 12) | check_sv(353, 13) | check_sv(37, 14) | check_sv(89, 15)) continue;
+#else // CHECK_COUNT == 5
+				if (check_sv(7_97, 0) | check_sv(13_41, 1) | check_sv(769, 2) | check_sv(193, 3) | check_sv(641, 4)) continue;
 
-				// 15 cycles, 11.5%
+				// 13 cycles, 13.4%
 #ifdef PROFILE_COUNT
 				count[0] += 1;
 #endif
-				if ((sieve_113[b_p[6]] != 0)
-				  | (sieve_1153[b_p[7]] != 0)
-				  | (sieve_577[b_p[8]] != 0)
-				  | (sieve_29[b_p[9]] != 0)
-				  | (sieve_73[b_p[10]] != 0)) continue;
+				if (check_sv(449, 5) | check_sv(113, 6) | check_sv(1153, 7) | check_sv(577, 8) | check_sv(29, 9)) continue;
 
-				// 16.5 cycles, 6.4%
+				// 15 cycles, 7.1%
 #ifdef PROFILE_COUNT
 				count[1] += 1;
 #endif
-				if ((sieve_11[b_p[11]] != 0)
-				  | (sieve_1409[b_p[12]] != 0)
-				  | (sieve_353[b_p[13]] != 0)
-				  | (sieve_37[b_p[14]] != 0)
-				  | (sieve_89[b_p[15]] != 0)) continue;
+				if (check_sv(73, 10) | check_sv(11, 11) | check_sv(1409, 12) | check_sv(353, 13) | check_sv(37, 14) | check_sv(89, 15)) continue;
 
-				// 17 cycles, 4.1%
+				// 16 cycles, 4.1%
 #ifdef PROFILE_COUNT
 				count[2] += 1;
+#endif
 #endif
 
 #include "check_sieves.hc"
 
-				// 30 cycles, 0.2%
+				// 31 cycles, 0.2%
 #ifdef PROFILE_COUNT
 				count[3] += 1;
 #endif
@@ -415,15 +442,16 @@ int main(int argc, char * argv[])
 						++n;
 					}
 
-					if (n >= n_min) output(b, n);
+					if (n >= n_min) output(b, n, extension);
 				}
 
 				// 39.5 cycles
 			}
 
 #ifdef PROFILE
-			const uint64_t dtT = __rdtsc() - t0;
-			std::cout << dtT / double(slice * pattern_size) << " cycles";
+			const uint64_t dt = __rdtsc() - t0;
+			dt_min = std::min(dt_min, dt); dt_max = std::max(dt_max, dt);
+			std::cout << dt / double(slice * pattern_size) << " cycles, min = " << dt_min << ", max = " << dt_max;
 #ifdef PROFILE_COUNT
 			for (size_t i = 0; i < 4; ++i) std::cout << ", " << 100.0 * count[i] / double(slice * pattern_size) << "%";
 #endif
