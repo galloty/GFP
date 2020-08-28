@@ -65,14 +65,19 @@ static void gen_primes(std::vector<uint32_t> & primes, const size_t count)
 	for (uint32_t p = uint32_t(prmGen.first()); p < 1000000; p = uint32_t(prmGen.next()))
 	{
 		if ((p == 2) || (p == 3) || (p == 5) || (p == 17) || (p == 257)) continue;		// Fermat primes
-		if ((p == 7) || (p == 13) || (p == 41) || (p == 97)) continue;					// 7 * 97 and 13 * 41 are 2-prime sieves
+		//  7 * 97: 0.857143 * 0.680412 = 0.583210
+		// 13 * 41: 0.769231 * 0.829268 = 0.637899
+		// 11 * 37: 0.909091 * 0.918919 = 0.835381
+		// 23 * 29: 0.956522 * 0.896552 = 0.857572
+		// 19 * 31: 0.947368 * 0.967742 = 0.916808
+		if ((p <= 41) || (p == 97)) continue;
 
 		uint32_t w_p;
 		if (p == 2) w_p = 1;
 		else
 		{
 			int e = 0;
-			for (uint32_t i = p - 1; i % 2 == 0; i /= 2) ++e;
+			for (uint32_t k = p - 1; k % 2 == 0; k /= 2) ++e;
 			e = std::min(e, n);
 			w_p = (uint32_t(1) << e) - 1;
 		}
@@ -93,7 +98,12 @@ static void gen_primes(std::vector<uint32_t> & primes, const size_t count)
 		primes.push_back(p);
 		size += p;
 		p_max = std::max(p_max, p);
-		// std::cout << p << ": " << pair.second << std::endl;
+
+		int e = 0;
+		uint32_t k = p - 1;
+		while ((e < n) && (k % 2 == 0)) { ++e; k /= 2; }
+		const uint32_t w_p = (p == 2) ? 1 : (uint32_t(1) << e) - 1;
+		std::cout << p << " = " << k << "*2^" << e << " + 1, w_p = " << w_p << ", 1 - w_p / p = " << pair.second << std::endl;
 		if (++c == count) break;
 	}
 
@@ -102,7 +112,7 @@ static void gen_primes(std::vector<uint32_t> & primes, const size_t count)
 
 int main()
 {
-	const size_t count = 260;
+	const size_t count = 250;
 	std::vector<uint32_t> primes;
 
 	gen_primes(primes, count);

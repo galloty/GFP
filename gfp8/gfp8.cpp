@@ -91,7 +91,7 @@ static std::string header()
 #endif
 
 	std::ostringstream ss;
-	ss << "gfp8 0.9.4 " << sysver << ssc.str() << std::endl;
+	ss << "gfp8 0.9.5 " << sysver << ssc.str() << std::endl;
 	ss << "Copyright (c) 2020, Yves Gallot" << std::endl;
 	ss << "gfp8 is free source code, under the MIT license." << std::endl;
 	ss << std::endl;
@@ -243,15 +243,15 @@ int main(int argc, char * argv[])
 
 	const size_t vsize = 16;
 	typedef uint16_t vec[vsize] __attribute__((aligned(32)));							// xmm or ymm registers
-	static const vec step_p = { 7 * 97, 13 * 41, 769, 193, 641, 449, 113, 1153, 577, 29, 73, 11, 1409, 353, 37, 89 };
+	static const vec step_p = { 7 * 97, 13 * 41, 769, 193, 641, 11 * 37, 23 * 29, 449, 113, 1153, 577, 73, 1409, 353, 19 * 31, 89 };
 	static vec pattern_step_p[pattern_size];
 	for (size_t j = 0; j < pattern_size; ++j)
 	{
 		for (size_t i = 0; i < vsize; ++i) pattern_step_p[j][i] = pattern_step[j] % step_p[i];
 	}
 
-	static uint8_t sieve_7_97[7 * 97], sieve_13_41[13 * 41];
-	sieveP2(sieve_7_97, 7, 97); sieveP2(sieve_13_41, 13, 41);
+	static uint8_t sieve_7_97[7 * 97], sieve_13_41[13 * 41], sieve_11_37[11 * 37], sieve_23_29[23 * 29], sieve_19_31[19 * 31];
+	sieveP2(sieve_7_97, 7, 97); sieveP2(sieve_13_41, 13, 41); sieveP2(sieve_11_37, 11, 37); sieveP2(sieve_23_29, 23, 29); sieveP2(sieve_19_31, 19, 31);
 	
 #include "def_sieves.hc"
 
@@ -375,34 +375,34 @@ int main(int argc, char * argv[])
 #endif
 #if CHECK_COUNT == 4
 				if (check_sv(7_97, 0) | check_sv(13_41, 1) | check_sv(769, 2) | check_sv(193, 3)) continue;
-				if (check_sv(641, 4) | check_sv(449, 5) | check_sv(113, 6) | check_sv(1153, 7)) continue;
-				if (check_sv(577, 8) | check_sv(29, 9) | check_sv(73, 10) | check_sv(11, 11)) continue;
-				if (check_sv(1409, 12) | check_sv(353, 13) | check_sv(37, 14) | check_sv(89, 15)) continue;
+				if (check_sv(641, 4) | check_sv(11_37, 5) | check_sv(23_29, 6) | check_sv(449, 7)) continue;
+				if (check_sv(113, 8) | check_sv(1153, 9) | check_sv(577, 10) | check_sv(73, 11)) continue;
+				if (check_sv(1409, 12) | check_sv(353, 13) | check_sv(19_31, 14) | check_sv(89, 15)) continue;
 #elif CHECK_COUNT == 6
-				if (check_sv(7_97, 0) | check_sv(13_41, 1) | check_sv(769, 2) | check_sv(193, 3) | check_sv(641, 4) | check_sv(449, 5)) continue;
-				if (check_sv(113, 6) | check_sv(1153, 7) | check_sv(577, 8) | check_sv(29, 9) | check_sv(73, 10)) continue;
-				if (check_sv(11, 11) | check_sv(1409, 12) | check_sv(353, 13) | check_sv(37, 14) | check_sv(89, 15)) continue;
+				if (check_sv(7_97, 0) | check_sv(13_41, 1) | check_sv(769, 2) | check_sv(193, 3) | check_sv(641, 4) | check_sv(11_37, 5)) continue;
+				if (check_sv(23_29, 6) | check_sv(449, 7) | check_sv(113, 8) | check_sv(1153, 9) | check_sv(577, 10)) continue;
+				if (check_sv(73, 11) | check_sv(1409, 12) | check_sv(353, 13) | check_sv(19_31, 14) | check_sv(89, 15)) continue;
 #elif CHECK_COUNT == 8
 				if (check_sv(7_97, 0) | check_sv(13_41, 1) | check_sv(769, 2) | check_sv(193, 3)
-				  | check_sv(641, 4) | check_sv(449, 5) | check_sv(113, 6) | check_sv(1153, 7)) continue;
-				if (check_sv(577, 8) | check_sv(29, 9) | check_sv(73, 10) | check_sv(11, 11)
-				  | check_sv(1409, 12) | check_sv(353, 13) | check_sv(37, 14) | check_sv(89, 15)) continue;
+				  | check_sv(641, 4) | check_sv(11_37, 5) | check_sv(23_29, 6) | check_sv(449, 7)) continue;
+				if (check_sv(113, 8) | check_sv(1153, 9) | check_sv(577, 10) | check_sv(73, 11)
+				  | check_sv(1409, 12) | check_sv(353, 13) | check_sv(19_31, 14) | check_sv(89, 15)) continue;
 #else // CHECK_COUNT == 5
 				if (check_sv(7_97, 0) | check_sv(13_41, 1) | check_sv(769, 2) | check_sv(193, 3) | check_sv(641, 4)) continue;
 
-				// 13 cycles, 13.4%
+				// 13.5 cycles, 13.4%
 #ifdef PROFILE_COUNT
 				count[0] += 1;
 #endif
-				if (check_sv(449, 5) | check_sv(113, 6) | check_sv(1153, 7) | check_sv(577, 8) | check_sv(29, 9)) continue;
+				if (check_sv(11_37, 5) | check_sv(23_29, 6) | check_sv(449, 7) | check_sv(113, 8) | check_sv(1153, 9)) continue;
 
-				// 15 cycles, 7.1%
+				// 15.5 cycles, 6.4%
 #ifdef PROFILE_COUNT
 				count[1] += 1;
 #endif
-				if (check_sv(73, 10) | check_sv(11, 11) | check_sv(1409, 12) | check_sv(353, 13) | check_sv(37, 14) | check_sv(89, 15)) continue;
+				if (check_sv(577, 10) | check_sv(73, 11) | check_sv(1409, 12) | check_sv(353, 13) | check_sv(19_31, 14) | check_sv(89, 15)) continue;
 
-				// 16 cycles, 4.1%
+				// 16.5 cycles, 3.6%
 #ifdef PROFILE_COUNT
 				count[2] += 1;
 #endif
@@ -410,7 +410,7 @@ int main(int argc, char * argv[])
 
 #include "check_sieves.hc"
 
-				// 30 cycles, 0.2%
+				// 28.5 cycles, 0.2%
 #ifdef PROFILE_COUNT
 				count[3] += 1;
 #endif
@@ -450,7 +450,7 @@ int main(int argc, char * argv[])
 					}
 				}
 
-				// 39 cycles
+				// 37.5 cycles
 			}
 
 #ifdef PROFILE
