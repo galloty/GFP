@@ -128,16 +128,22 @@ int main()
 	}
 
 	std::ofstream csFile("../check_sieves.hc");
-	if (csFile.is_open())
+	std::ofstream csFile512("../check_sieves_512.hc");
+	if (csFile.is_open() && csFile512.is_open())
 	{
 		for (const uint32_t & p : primes)
 		{
-			// 769, 193, 641, 449, 113, 1153, 577, 29, 73, 11, 1409, 353, 37, 89 are included in the fast sieve
+			// 769, 193, 641, 449, 113, 1153, 577, 73, 1409, 353, 89 are included in the fast sieve
 			if ((p == 769) || (p == 193) || (p == 641) || (p == 449) || (p == 113) || (p == 1153)) continue;
-			if ((p == 577) || (p == 29) || (p == 73) || (p == 11) || (p == 1409) || (p == 353) || (p == 37) || (p == 89)) continue;
+			if ((p == 577) || (p == 73) || (p == 1409) || (p == 353) || (p == 89)) continue;
 			csFile << "check_sieve(b, " << p << ");" << std::endl;
+
+			if ((p == 3329) || (p == 241) || (p == 53) || (p == 1217) || (p == 137) || (p == 61) || (p == 2689) || (p == 673)) continue;
+			if ((p == 337) || (p == 1601) || (p == 401) || (p == 3457) || (p == 433) || (p == 929) || (p == 7681) || (p == 7937)) continue;
+			csFile512 << "check_sieve(b, " << p << ");" << std::endl;
 		}
 		csFile.close();
+		csFile512.close();
 	}
 
 	std::ofstream mpFile("../mods_p.h");
@@ -145,9 +151,9 @@ int main()
 	{
 		for (const uint32_t & p : primes)
 		{
-			// 769, 193, 641, 449, 113, 1153, 577, 29, 73, 11, 1409, 353, 37, 89 are included in the fast sieve
+			// 769, 193, 641, 449, 113, 1153, 577, 73, 1409, 353, 89 are included in the fast sieve
 			if ((p == 769) || (p == 193) || (p == 641) || (p == 449) || (p == 113) || (p == 1153)) continue;
-			if ((p == 577) || (p == 29) || (p == 73) || (p == 11) || (p == 1409) || (p == 353) || (p == 37) || (p == 89)) continue;
+			if ((p == 577) || (p == 73) || (p == 1409) || (p == 353) || (p == 89)) continue;
 			gm_print_95(p, mpFile);
 		}
 	}

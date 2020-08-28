@@ -29,6 +29,8 @@ The integer sequence is https://oeis.org/A337364.
 
 // #define CHECK_COUNT	5
 
+// #define AVX_512
+
 #if defined (_WIN32)	// use Performance Counter
 #include <Windows.h>
 #else					// otherwise use gettimeofday() instead
@@ -241,13 +243,21 @@ int main(int argc, char * argv[])
 	static const size_t pattern_mod = 131070;
 	static const uint16_t pattern_step[pattern_size] = { 6426, 8994, 2056, 4370, 10794, 256, 10794, 4370, 2056, 8994, 6426, 10794, 15420, 13106, 15420, 10794 };
 
+#ifdef AVX_512
+	const size_t vsize = 32;
+	typedef uint16_t vec[vsize] __attribute__((aligned(64)));							// zmm registers
+	static const vec step_p = { 7 * 97, 13 * 41, 769, 193, 641, 11 * 37, 23 * 29, 449, 113, 1153, 577, 73, 1409, 353, 19 * 31, 89,
+								3329, 241, 53, 1217, 137, 61, 2689, 673, 337, 1601, 401, 3457, 433, 929, 7681, 7937 };
+#else
 	const size_t vsize = 16;
 	typedef uint16_t vec[vsize] __attribute__((aligned(32)));							// xmm or ymm registers
 	static const vec step_p = { 7 * 97, 13 * 41, 769, 193, 641, 11 * 37, 23 * 29, 449, 113, 1153, 577, 73, 1409, 353, 19 * 31, 89 };
+#endif
 	static vec pattern_step_p[pattern_size];
 	for (size_t j = 0; j < pattern_size; ++j)
 	{
-		for (size_t i = 0; i < vsize; ++i) pattern_step_p[j][i] = pattern_step[j] % step_p[i];
+		vec & psj = pattern_step_p[j];
+		for (size_t i = 0; i < vsize; ++i) psj[i] = pattern_step[j] % step_p[i];
 	}
 
 	static uint8_t sieve_7_97[7 * 97], sieve_13_41[13 * 41], sieve_11_37[11 * 37], sieve_23_29[23 * 29], sieve_19_31[19 * 31];
@@ -348,7 +358,11 @@ int main(int argc, char * argv[])
 			{
 				const vec & psi = pattern_step_p[i_pattern];
 
-#pragma omp simd aligned(b_p, psi, step_p : 16)		// generates SSE2 or AVX2 instructions
+#ifdef AVX_512
+#pragma omp simd aligned(b_p, psi, step_p : 64) simdlen(32)		// generates AVX-512 instructions
+#else
+#pragma omp simd aligned(b_p, psi, step_p : 32)					// generates SSE2 or AVX2 instructions
+#endif
 				for (size_t k = 0; k < vsize; ++k)
 				{
 					const uint16_t r = b_p[k] + psi[k];
@@ -408,7 +422,15 @@ int main(int argc, char * argv[])
 #endif
 #endif
 
+#ifdef AVX_512
+				if (check_sv(3329, 16 + 0) | check_sv(241, 16 + 1) | check_sv(53, 16 + 2) | check_sv(1217, 16 + 3) | check_sv(137, 16 + 4)) continue;
+				if (check_sv(61, 16 + 5) | check_sv(2689, 16 + 6) | check_sv(673, 16 + 7) | check_sv(337, 16 + 8) | check_sv(1601, 16 + 9)) continue;
+				if (check_sv(401, 16 + 10) | check_sv(3457, 16 + 11) | check_sv(433, 16 + 12) | check_sv(929, 16 + 13) | check_sv(7681, 16 + 14) | check_sv(7937, 16 + 15)) continue;
+
+#include "check_sieves_512.hc"
+#else
 #include "check_sieves.hc"
+#endif
 
 				// 28.5 cycles, 0.2%
 #ifdef PROFILE_COUNT

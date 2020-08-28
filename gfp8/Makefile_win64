@@ -2,6 +2,7 @@ CC = g++ -m64 -std=c++17
 CFLAGS = -Wall -Wextra -fexceptions -fopenmp
 RFLAGS = -O3
 # RFLAGS = -O3 -march=skylake
+# RFLAGS = -O3 -march=skylake-avx512 -DAVX_512
 
 EXEC = gfp8.exe
 
