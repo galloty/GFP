@@ -17,7 +17,6 @@ The integer sequence is https://oeis.org/A343121.
 #include <mutex>
 
 #include <vector>
-#include <deque>
 #include <functional>
 
 #include <gmp.h>
@@ -264,6 +263,20 @@ static void gen_sieve(const size_t count)
 }
 #endif
 
+static double next_a(const double a, const double dcount)
+{
+	const double count = 0.5 * a * a / log(a) + dcount;
+
+	double a_min = a, a_max = 1e12;
+	while (fabs(a_max - a_min) >= 1)
+	{
+		const double a_half = 0.5 * (a_min + a_max);
+		if (0.5 * a_half * a_half / log(a_half) < count) a_min = a_half; else a_max = a_half;
+	}
+
+	return 0.5 * (a_min + a_max);
+}
+
 int main(int argc, char * argv[])
 {
 	std::cout << header();
@@ -301,7 +314,7 @@ int main(int argc, char * argv[])
 
 	std::cout << (resume ? "Resuming from a checkpoint, t" : "T") << "esting from " << a_start << " to " << a_end << std::endl;
 
-	std::deque<uint32_t> primes;
+	std::vector<uint32_t> primes;
 	PrmGen prmgen; uint32_t prm =  prmgen.first();
 	for (; prm <= 2 * a_start; prm = prmgen.next())
 	{
@@ -312,7 +325,8 @@ int main(int argc, char * argv[])
 	mpz_set_ui(two, 2);
 
 	timer::time disp_time = timer::currentTime();
-	size_t count = 0;
+	uint32_t disp_a = a_start;
+	size_t count = 0, scount = 0;
 
 	for (uint32_t a = a_start; a <= a_end; ++a)
 	{
@@ -320,9 +334,10 @@ int main(int argc, char * argv[])
 		const double dt = timer::diffTime(cur_time, disp_time);
 		if (dt > 10)
 		{
-			disp_time = cur_time;
-			std::cout << a << ", +" << int(count * 86400.0 / 1e0 / dt) << "/day       \r" << std::flush;
-			count = 0;
+			const double count = 0.5 * (a / log(a) * a - disp_a / log(disp_a) * disp_a);
+			const double na = next_a(a,  count * 86400.0 / dt);
+			std::cout << a << ", +" << std::setprecision(3) << 1e-6 * (na - a) << "M/day, 1/" << int(count / scount) << "       \r" << std::flush;
+			disp_time = cur_time; disp_a = a;
 
 			std::ofstream ctxFile("xgfp8.ctx");
 			if (ctxFile.is_open())
@@ -332,11 +347,13 @@ int main(int argc, char * argv[])
 				ctxFile.close();
 			}
 		}
-		++count;
 
-		for (const uint32_t p : primes)
+		// std:: cout << "hello";
+		const uint32_t * const p = primes.data();
+		for (size_t i = 0, s = primes.size(); i < s; ++i)
 		{
-			const uint32_t b = p - a;
+			const uint32_t b = p[i] - a;
+			++count;
 
 			check_sieve(a, b, 257); check_sieve(a, b, 17); check_sieve(a, b, 5); check_sieve(a, b, 3);
 			check_sieve(a, b, 769); check_sieve(a, b, 193); check_sieve(a, b, 97); check_sieve(a, b, 13);
@@ -347,6 +364,8 @@ int main(int argc, char * argv[])
 			check_sieve(a, b, 19); check_sieve(a, b, 1217); check_sieve(a, b, 137); check_sieve(a, b, 61);
 			check_sieve(a, b, 23); check_sieve(a, b, 31); check_sieve(a, b, 43); check_sieve(a, b, 47);
 			check_sieve(a, b, 59); check_sieve(a, b, 67); check_sieve(a, b, 71); check_sieve(a, b, 79);
+
+			++scount;
 
 			mpz_set_ui(a2n, a); mpz_set_ui(b2n, b);
 
@@ -384,7 +403,7 @@ int main(int argc, char * argv[])
 		}
 
 		// a <= p <= 2a => a + 1 <= p <= 2a + 2
-		if (primes.front() == a) primes.pop_front();
+		if (primes.front() == a) primes.erase(primes.begin());
 		if (prm == 2 * a + 1)
 		{
 			primes.push_back(prm);
