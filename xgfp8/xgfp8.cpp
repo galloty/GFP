@@ -109,31 +109,60 @@ inline uint32_t addmod32(const uint32_t x, const uint32_t y, const uint32_t m)
 	return x + y - c;
 }
 
-static void fill_sieve(bool * const sieve, const uint32_t p)
+inline uint32_t gcd(const uint32_t x, const uint32_t y)
 {
-	for (size_t i = 0; i <  p * size_t(p); ++i) sieve[i] = 0;
+	uint32_t a = x, b = y;
+	while (b != 0)
+	{
+		const size_t t = b;
+		b = a % b;
+		a = t;
+	}
+	return a;
+}
 
-	for (uint32_t a = 0; a < p; ++a)
+static size_t fill_sieve(bool * const sieve, const uint32_t m)
+{
+	size_t count = 0;
+
+	for (size_t i = 0; i < m * size_t(m); ++i) sieve[i] = false;
+
+	for (uint32_t a = 0; a < m; ++a)
 	{
 		for (uint32_t b = 0; b <= a; ++b)
 		{
-			if (addmod32(a, b, p) == 0)
+			const uint32_t ab = addmod32(a, b, m);
+			if ((ab == 0) || (gcd(ab, m) != 1))
 			{
-				sieve[a * size_t(p) + b] = sieve[b * size_t(p) + a] = 1;
+				sieve[a * size_t(m) + b] = sieve[b * size_t(m) + a] = true;
+				count += (a == b) ? 1 : 2;
 				continue;
 			}
 			uint32_t ra = a, rb = b;
 			for (size_t n = 1; n <= XGFP - 1; ++n)
 			{
-				ra = (ra * ra) % p; rb = (rb * rb) % p;
-				if (addmod32(ra, rb, p) == 0)
+				ra = (ra * ra) % m; rb = (rb * rb) % m;
+				const uint32_t rab = addmod32(ra, rb, m);
+				if ((rab == 0) || (gcd(rab, m) != 1))
 				{
-					sieve[a * size_t(p) + b] = sieve[b * size_t(p) + a] = 1;
+					sieve[a * size_t(m) + b] = sieve[b * size_t(m) + a] = true;
+					count += (a == b) ? 1 : 2;
 					break;
 				}
 			}
 		}
 	}
+
+	// for (size_t i = 0; i < m; ++i)
+	// {
+	// 	for (size_t j = 0; j < m; ++j)
+	// 	{
+	// 		std::cout << (sieve[i * size_t(m) + j] ? 1 : 0) << " ";
+	// 	}
+	// 	std::cout << std::endl;
+	// }
+
+	return m * size_t(m) - count;
 }
 
 #define def_sieve(P)			bool * sieve_##P = new bool[P * size_t(P)]; fill_sieve(sieve_##P, P)
@@ -226,40 +255,27 @@ inline bool prp(const uint64_t n)	// n must be odd, 2-prp test
 	return (r == 1);
 }
 
-static double sieve_weight(const bool * const sieve, const uint32_t p)
-{
-	const size_t size = p * size_t(p);
-	size_t weight = 0;
-	for (size_t i = 0; i < size; ++i) weight += (sieve[i] == 0);
-	// std::cout << p << ", " << weight << ", " << size << ", " << weight / double(size) << std::endl;
-	return weight / double(size);
-}
-
-static void gen_sieve(const size_t count)
+static void gen_sieve()
 {
 	std::vector<std::pair<uint32_t, double>> weights;
 
 	const uint32_t p_max = 1500;
 	bool * const sieve = new bool[p_max * size_t(p_max)];
-
-	for (uint32_t p = 3; p <= p_max; p += 2)
+	PrmGen prmgen; prmgen.first();
+	for (uint32_t p = prmgen.next(); p <= p_max; p = prmgen.next())
 	{
-		if (prp(p))
-		{
-			fill_sieve(sieve, p);
-			const double w = sieve_weight(sieve, p);
-			weights.push_back(std::make_pair(p, w));
-			// std::cout << p << ": " << w << std::endl;
-		}
+		const double weight = fill_sieve(sieve, p) / (p * double(p));
+		weights.push_back(std::make_pair(p, weight));
+		std::cout << p << ": " << weight << std::endl;
 	}
-
 	delete[] sieve;
 
 	std::sort(weights.begin(), weights.end(), [&](const auto & p1, const auto & p2) { return p1.second < p2.second; });
 
-	// for (size_t i = 0; i < count; ++i) std::cout << weights[i].first << ": " << weights[i].second << std::endl;
-	for (size_t i = 0; i < count; ++i) std::cout << "def_sieve(" << weights[i].first << ");" << std::endl;
-	for (size_t i = 0; i < count; ++i) std::cout << "check_sieve(a, b, " << weights[i].first << ");" << std::endl;
+	const size_t count = 100;
+	for (size_t i = 0; i < count; ++i) std::cout << weights[i].first << ": " << weights[i].second << std::endl;
+	// for (size_t i = 0; i < count; ++i) std::cout << "def_sieve(" << weights[i].first << ");" << std::endl;
+	// for (size_t i = 0; i < count; ++i) std::cout << "check_sieve(a, b, " << weights[i].first << ");" << std::endl;
 }
 #endif
 
@@ -286,19 +302,17 @@ int main(int argc, char * argv[])
 	const uint32_t a_max = (argc > 2) ? uint32_t(std::atoll(argv[2])) : uint32_t(-1);
 
 #ifdef GEN_SIEVE
-	gen_sieve(100);
+	gen_sieve();
 	return EXIT_SUCCESS;
 #endif
 
-	def_sieve(257); def_sieve(17); def_sieve(5); def_sieve(3);
-	def_sieve(769); def_sieve(193); def_sieve(97); def_sieve(13);
-	def_sieve(641); def_sieve(41); def_sieve(7); def_sieve(449);
-	def_sieve(113); def_sieve(1153); def_sieve(577); def_sieve(29);
-	def_sieve(73); def_sieve(11); def_sieve(1409); def_sieve(353);
-	def_sieve(37); def_sieve(89); def_sieve(241); def_sieve(53);
-	def_sieve(19); def_sieve(1217); def_sieve(137); def_sieve(61);
-	def_sieve(23); def_sieve(31); def_sieve(43); def_sieve(47);
-	def_sieve(59); def_sieve(67); def_sieve(71); def_sieve(79);
+	// 255 = 3 * 5 * 17, 679 = 7 * 97, 533 = 13 * 41, 407 = 11 * 37, 667 = 23 * 29, 589 = 19 * 31
+	def_sieve(257); def_sieve(255); def_sieve(679); def_sieve(533);
+	def_sieve(769); def_sieve(193); def_sieve(641); def_sieve(407);
+	def_sieve(667); def_sieve(449); def_sieve(113); def_sieve(1153);
+	def_sieve(577);	def_sieve(73); def_sieve(1409); def_sieve(353);
+	def_sieve(589);	def_sieve(89); def_sieve(241); def_sieve(53);
+	def_sieve(1217); def_sieve(137); def_sieve(61); def_sieve(673);
 
 	uint32_t a_ctx = 0;
 	std::ifstream ctxFile("xgfp8.ctx");
@@ -326,7 +340,7 @@ int main(int argc, char * argv[])
 
 	timer::time disp_time = timer::currentTime();
 	uint32_t disp_a = a_start;
-	size_t count = 0, scount = 0;
+	size_t pcount = 0, scount = 0;
 
 	for (uint32_t a = a_start; a <= a_end; ++a)
 	{
@@ -335,8 +349,9 @@ int main(int argc, char * argv[])
 		if (dt > 10)
 		{
 			const double count = 0.5 * (a / log(a) * a - disp_a / log(disp_a) * disp_a);
-			const double na = next_a(a,  count * 86400.0 / dt);
-			std::cout << a << ", +" << std::setprecision(3) << 1e-6 * (na - a) << "M/day, 1/" << int(count / scount) << "       \r" << std::flush;
+			const double na = next_a(a, count * 86400.0 / dt);
+			std::cout << a << ", +" << std::setprecision(3) << 1e-6 * (na - a) << "M/day, prime ratio: 1/"
+				<< a / primes.size() << ", sieve ratio: 1/" << pcount / scount << "       \r" << std::flush;
 			disp_time = cur_time; disp_a = a;
 
 			std::ofstream ctxFile("xgfp8.ctx");
@@ -353,17 +368,14 @@ int main(int argc, char * argv[])
 		for (size_t i = 0, s = primes.size(); i < s; ++i)
 		{
 			const uint32_t b = p[i] - a;
-			++count;
+			++pcount;
 
-			check_sieve(a, b, 257); check_sieve(a, b, 17); check_sieve(a, b, 5); check_sieve(a, b, 3);
-			check_sieve(a, b, 769); check_sieve(a, b, 193); check_sieve(a, b, 97); check_sieve(a, b, 13);
-			check_sieve(a, b, 641); check_sieve(a, b, 41); check_sieve(a, b, 7); check_sieve(a, b, 449);
-			check_sieve(a, b, 113); check_sieve(a, b, 1153); check_sieve(a, b, 577); check_sieve(a, b, 29);
-			check_sieve(a, b, 73); check_sieve(a, b, 11); check_sieve(a, b, 1409); check_sieve(a, b, 353);
-			check_sieve(a, b, 37); check_sieve(a, b, 89); check_sieve(a, b, 241); check_sieve(a, b, 53);
-			check_sieve(a, b, 19); check_sieve(a, b, 1217); check_sieve(a, b, 137); check_sieve(a, b, 61);
-			check_sieve(a, b, 23); check_sieve(a, b, 31); check_sieve(a, b, 43); check_sieve(a, b, 47);
-			check_sieve(a, b, 59); check_sieve(a, b, 67); check_sieve(a, b, 71); check_sieve(a, b, 79);
+			check_sieve(a, b, 257); check_sieve(a, b, 255); check_sieve(a, b, 679); check_sieve(a, b, 533);
+			check_sieve(a, b, 769); check_sieve(a, b, 193); check_sieve(a, b, 641); check_sieve(a, b, 407);
+			check_sieve(a, b, 667); check_sieve(a, b, 449); check_sieve(a, b, 113); check_sieve(a, b, 1153);
+			check_sieve(a, b, 577);	check_sieve(a, b, 73); check_sieve(a, b, 1409); check_sieve(a, b, 353);
+			check_sieve(a, b, 589);	check_sieve(a, b, 89); check_sieve(a, b, 241); check_sieve(a, b, 53);
+			check_sieve(a, b, 1217); check_sieve(a, b, 137); check_sieve(a, b, 61); check_sieve(a, b, 673);
 
 			++scount;
 
