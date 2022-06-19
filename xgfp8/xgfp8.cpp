@@ -360,21 +360,7 @@ public:
 	}
 };
 
-static double next_a(const double a, const double dcount)
-{
-	const double count = 0.5 * a * a / log(a) + dcount;
-
-	double a_min = a, a_max = 1e12;
-	while (fabs(a_max - a_min) >= 1)
-	{
-		const double a_half = 0.5 * (a_min + a_max);
-		if (0.5 * a_half * a_half / log(a_half) < count) a_min = a_half; else a_max = a_half;
-	}
-
-	return 0.5 * (a_min + a_max);
-}
-
-static void check(const uint32_t a_start, const uint32_t a_end)
+static void check(const uint32_t a_start_257_17, const uint32_t a_end_257_17)
 {
 	GFP gfp;
 
@@ -384,78 +370,83 @@ static void check(const uint32_t a_start, const uint32_t a_end)
 #endif
 
 	timer::time disp_time = timer::currentTime();
-	uint32_t disp_a = a_start;
 	size_t pcount = 0, scount = 0;
 
-	for (uint32_t a = a_start; a <= a_end; ++a)
+	for (uint32_t a_257_17 = a_start_257_17; a_257_17 <= a_end_257_17; ++a_257_17)
 	{
+		// a = 0 (mod 257) and a = 0 (mod 17) then check all 0 < b < a
+		const uint32_t a = a_257_17 * 257 * 17;
+		
+		for (uint32_t b = 1, b_255 = b; b < a; ++b, b_255 = addmod32(b_255, 1, 255))
+		{
+			++pcount;
+			if (gfp.check_sieve(a, b, b_255)) continue;
+			++scount;
+			gfp.check_pseq(a, b);
+		}
+
+		// a = 0 (mod 257) and a != 0 (mod 17) then check 0 < b < a such that b = 0 (mod 17) or b = a (mod 17)
+		for (uint32_t i = 1; i < 17; ++i)
+		{
+			const uint32_t a = (a_257_17 * 17 + i) * 257;
+
+			for (uint32_t b = 17, b_255 = b; b < a; b += 17, b_255 = addmod32(b_255, 17, 255))
+			{
+				++pcount;
+				if (gfp.check_sieve(a, b, b_255)) continue;
+				++scount;
+				gfp.check_pseq(a, b);
+			}
+
+			for (uint32_t b = a % 17, b_255 = b; b < a; b += 17, b_255 = addmod32(b_255, 17, 255))
+			{
+				++pcount;
+				if (gfp.check_sieve(a, b, b_255)) continue;
+				++scount;
+				gfp.check_pseq(a, b);
+			}
+		}
+
+		// a != 0 (mod 257) then check 0 < b < a such that b = 0 (mod 257) or b = a (mod 257)
+		for (uint32_t i = 1; i < 257; ++i)
+		{
+			for (uint32_t j = 0; j < 17; ++j)
+			{
+				const uint32_t a = (a_257_17 * 257 + i) * 17 + j;
+
+				for (uint32_t b = 257, b_255 = b - 255; b < a; b += 257, b_255 = addmod32(b_255, 257 - 255, 255))
+				{
+					++pcount;
+					if (gfp.check_sieve(a, b, b_255)) continue;
+					++scount;
+					gfp.check_pseq(a, b);
+				}
+
+				for (uint32_t b = a % 257, b_255 = (b >= 255) ? b - 255 : b; b < a; b += 257, b_255 = addmod32(b_255, 257 - 255, 255))
+				{
+					++pcount;
+					if (gfp.check_sieve(a, b, b_255)) continue;
+					++scount;
+					gfp.check_pseq(a, b);
+				}
+			}
+		}
+
 		const timer::time cur_time = timer::currentTime();
 		const double dt = timer::diffTime(cur_time, disp_time);
-		if (dt > 10)
+		disp_time = cur_time;
+		const double K = a_257_17 * 86400.0 / dt, x = a_257_17;
+		const double da = 0.5 * (sqrt(4 * x * (x - 1) + 8 * K + 1) - 2 * x - 1);
+		const uint32_t na = (a_257_17 + 1) * 257 * 17;
+		std::cout << na << ", +" << std::setprecision(3) << 1e-6 * da * 257 * 17 << "M/day, 1/" << pcount / scount << "       \r" << std::flush;
+		pcount = scount = 0;
+
+		std::ofstream ctxFile("xgfp8.ctx");
+		if (ctxFile.is_open())
 		{
-			const double count = 0.5 * (a / log(a) * a - disp_a / log(disp_a) * disp_a);
-			const double na = next_a(a, count * 86400.0 / dt);
-			std::cout << a << ", +" << std::setprecision(3) << 1e-6 * (na - a) << "M/day, 1/" << pcount / scount << "       \r" << std::flush;
-			disp_time = cur_time; disp_a = a;
-			pcount = scount = 0;
-
-			std::ofstream ctxFile("xgfp8.ctx");
-			if (ctxFile.is_open())
-			{
-				ctxFile << a << std::endl;
-				ctxFile.flush();
-				ctxFile.close();
-			}
-		}
-
-		if (a % 257 == 0)
-		{
-			if (a % 17 == 0)
-			{
-				for (uint32_t b = 1, b_255 = b; b <= a; ++b, b_255 = addmod32(b_255, 1, 255))
-				{
-					++pcount;
-					if (gfp.check_sieve(a, b, b_255)) continue;
-					++scount;
-					gfp.check_pseq(a, b);
-				}
-			}
-			else
-			{
-				for (uint32_t b = 17, b_255 = b; b <= a; b += 17, b_255 = addmod32(b_255, 17, 255))
-				{
-					++pcount;
-					if (gfp.check_sieve(a, b, b_255)) continue;
-					++scount;
-					gfp.check_pseq(a, b);
-				}
-
-				for (uint32_t b = a % 17, b_255 = b; b <= a; b += 17, b_255 = addmod32(b_255, 17, 255))
-				{
-					++pcount;
-					if (gfp.check_sieve(a, b, b_255)) continue;
-					++scount;
-					gfp.check_pseq(a, b);
-				}
-			}
-		}
-		else
-		{
-			for (uint32_t b = 257, b_255 = b - 255; b <= a; b += 257, b_255 = addmod32(b_255, 257 - 255, 255))
-			{
-				++pcount;
-				if (gfp.check_sieve(a, b, b_255)) continue;
-				++scount;
-				gfp.check_pseq(a, b);
-			}
-
-			for (uint32_t b = a % 257, b_255 = (b >= 255) ? b - 255 : b; b <= a; b += 257, b_255 = addmod32(b_255, 257 - 255, 255))
-			{
-				++pcount;
-				if (gfp.check_sieve(a, b, b_255)) continue;
-				++scount;
-				gfp.check_pseq(a, b);
-			}
+			ctxFile << na << std::endl;
+			ctxFile.flush();
+			ctxFile.close();
 		}
 	}
 }
@@ -471,7 +462,8 @@ static void valid()
 	for (size_t i = 0; i < n; ++i)
 	{
 		std::cout << i + 1 << ": " << std::endl;
-		check(a[i], a[i]);
+		const uint32_t a_257_17 = a[i] / (257 * 17);
+		check(a_257_17, a_257_17);
 	}
 }
 #endif
@@ -486,6 +478,7 @@ int main(int argc, char * argv[])
 
 #ifdef VALID
 	valid();
+	return EXIT_SUCCESS;
 #endif
 
 	uint32_t a_ctx = 0;
@@ -500,9 +493,12 @@ int main(int argc, char * argv[])
 	const bool resume = (a_start < a_ctx);
 	if (resume) a_start = a_ctx;
 
-	std::cout << (resume ? "Resuming from a checkpoint, t" : "T") << "esting from " << a_start << " to " << a_end << std::endl;
+	const uint32_t a_start_257_17 = a_start / (257 * 17);
+	const uint32_t a_end_257_17 = a_end / (257 * 17) + ((a_end % (257 * 17) != 0) ? 1 : 0);
 
-	check(a_start, a_end);
+	std::cout << (resume ? "Resuming from a checkpoint, t" : "T") << "esting from " << (a_start < 2 ? 2 : a_start) << " to " << a_end << std::endl;
+
+	check(a_start_257_17, a_end_257_17);
 
 	return EXIT_SUCCESS;
 }
