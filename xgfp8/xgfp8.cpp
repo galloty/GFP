@@ -21,8 +21,8 @@ The integer sequence is https://oeis.org/A343121.
 
 #include <gmp.h>
 
-// #define	VALID
-// #define	GEN_SIEVE
+#define	VALID
+// #define DISP_RATIO
 
 #if defined (_WIN32)	// use Performance Counter
 #include <Windows.h>
@@ -138,9 +138,12 @@ private:
 	static constexpr uint32_t mod[] = {
 		3 * 5 * 17, 7 * 97, 13 * 41, 769, 193, 641, 11 * 37, 23 * 29, 449, 113, 1153, 577, 73, 1409, 353, 19 * 31, 89,
 		241, 53, 1217, 137, 61, 673, 337, /* 401, 433, 929, 233, 101, 109, 593, 281, 1249, 43 */ };
+	static const size_t mod_size = sizeof(mod) / sizeof(uint32_t);
 
 	mpz_t two, a2n, b2n, xgfn, r;
 	bool * const sieve_array;
+
+	uint32_t a_mod[mod_size], a_mod_mul[mod_size];
 
 protected:
 	static int ilog2(const uint64_t x) { return 63 - __builtin_clzll(x); }
@@ -258,40 +261,36 @@ protected:
 		return m * size_t(m) - count;
 	}
 
-public:
-	GFP() : sieve_array(new bool[421877741])
+	void init_mod(const uint32_t a)
 	{
-		bool * psieve = sieve_array;
-		for (size_t i = 0; i < sizeof(mod) / sizeof(uint32_t); ++i)
+		for (size_t i = 0; i < mod_size; ++i)
 		{
-			const uint32_t & p = mod[i];
-			fill_sieve(psieve, p);
-			psieve += p * p;
+			const uint32_t m = mod[i], am = a % m;
+			a_mod[i] = am; a_mod_mul[i] = am * m;
 		}
-		std::cout << "sieve_array size: " <<  psieve - sieve_array << std::endl;
-
-		mpz_inits(two, a2n, b2n, xgfn, r, nullptr);
-		mpz_set_ui(two, 2);
 	}
 
-	virtual ~GFP()
+	void add_mod(const uint32_t n)
 	{
-		delete[] sieve_array;
-		mpz_clears(two, a2n, b2n, xgfn, r, nullptr);
+		for (size_t i = 0; i < mod_size; ++i)
+		{
+			const uint32_t m = mod[i], am = addmod32(a_mod[i], n % m, m);
+			a_mod[i] = am; a_mod_mul[i] = am * m;
+		}
 	}
 
-	bool check_sieve(const uint32_t a, const uint32_t b, const uint32_t b_255) const
+	bool check_sieve(const uint32_t b, const uint32_t b_255) const
 	{
 		const bool * psieve = sieve_array;
 
-			if (psieve[(a % 255) * 255 + b_255] != 0) return true;
-			psieve += 255 * 255;
+		if (psieve[a_mod_mul[0] + b_255] != 0) return true;
+		psieve += 255 * 255;
 
 #pragma GCC unroll 100
-		for (size_t i = 1; i < sizeof(mod) / sizeof(uint32_t); ++i)
+		for (size_t i = 1; i < mod_size; ++i)
 		{
 			const uint32_t p = mod[i];
-			if (psieve[(a % p) * p + (b % p)] != 0) return true;
+			if (psieve[a_mod_mul[i] + (b % p)] != 0) return true;
 			psieve += p * p;
 		}
 		return false;
@@ -299,7 +298,7 @@ public:
 
 	void check_pseq(const uint32_t a, const uint32_t b)
 	{
-		if (!prp(a + b)) return;
+		if (!prp(a + uint64_t(b))) return;
 	
 		mpz_set_ui(a2n, a); mpz_set_ui(b2n, b);
 
@@ -336,7 +335,30 @@ public:
 		}
 	}
 
-	void gen_sieve()
+public:
+	GFP() : sieve_array(new bool[421877741])
+	{
+		bool * psieve = sieve_array;
+
+		for (size_t i = 0; i < mod_size; ++i)
+		{
+			const uint32_t & p = mod[i];
+			fill_sieve(psieve, p);
+			psieve += p * p;
+		}
+		std::cout << "sieve_array size: " <<  psieve - sieve_array << std::endl;
+
+		mpz_inits(two, a2n, b2n, xgfn, r, nullptr);
+		mpz_set_ui(two, 2);
+	}
+
+	virtual ~GFP()
+	{
+		delete[] sieve_array;
+		mpz_clears(two, a2n, b2n, xgfn, r, nullptr);
+	}
+
+	void gen_sieve() const
 	{
 		std::vector<std::pair<uint32_t, double>> weights;
 
@@ -358,98 +380,99 @@ public:
 		const size_t count = 100;
 		for (size_t i = 0; i < count; ++i) std::cout << weights[i].first << ": " << weights[i].second << std::endl;
 	}
-};
 
-static void check(const uint32_t a_start_257_17, const uint32_t a_end_257_17)
-{
-	GFP gfp;
-
+	void check(const uint32_t a_start_257, const uint32_t a_end_257)
+	{
 #ifdef GEN_SIEVE
-	gfp.gen_sieve();
-	return EXIT_SUCCESS;
+		gen_sieve();
+		return;
 #endif
 
-	timer::time disp_time = timer::currentTime();
-	size_t pcount = 0, scount = 0;
+		timer::time disp_time = timer::currentTime();
+		uint32_t disp_a_257 = a_start_257;
+#ifdef DISP_RATIO
+		size_t wcount = 0, scount = 0;
+#endif
 
-	for (uint32_t a_257_17 = a_start_257_17; a_257_17 <= a_end_257_17; ++a_257_17)
-	{
-		// a = 0 (mod 257) and a = 0 (mod 17) then check all 0 < b < a
-		const uint32_t a = a_257_17 * 257 * 17;
-		
-		for (uint32_t b = 1, b_255 = b; b < a; ++b, b_255 = addmod32(b_255, 1, 255))
+		for (uint32_t a_257 = a_start_257; a_257 <= a_end_257; ++a_257)
 		{
-			++pcount;
-			if (gfp.check_sieve(a, b, b_255)) continue;
-			++scount;
-			gfp.check_pseq(a, b);
-		}
-
-		// a = 0 (mod 257) and a != 0 (mod 17) then check 0 < b < a such that b = 0 (mod 17) or b = a (mod 17)
-		for (uint32_t i = 1; i < 17; ++i)
-		{
-			const uint32_t a = (a_257_17 * 17 + i) * 257;
-
-			for (uint32_t b = 17, b_255 = b; b < a; b += 17, b_255 = addmod32(b_255, 17, 255))
+			const timer::time cur_time = timer::currentTime();
+			const double dt = timer::diffTime(cur_time, disp_time);
+			if (dt > 5)
 			{
-				++pcount;
-				if (gfp.check_sieve(a, b, b_255)) continue;
-				++scount;
-				gfp.check_pseq(a, b);
-			}
+				disp_time = cur_time;
+				double s = 0; for (uint32_t i = disp_a_257; i < a_257; ++i) s += i;
+				const double K = s * 86400.0 / dt, x = a_257;
+				const double da = 0.5 * (sqrt(4 * x * (x - 1) + 8 * K + 1) - 2 * x - 1);
+				std::cout << a_257 * 257 << ", +" << std::setprecision(3) << 1e-6 * da * 257 << "M/day";
+#ifdef DISP_RATIO
+				std::cout << ", 1/" << wcount / scount;
+				wcount = scount = 0;
+#endif
+				std::cout << "       \r" << std::flush;
+				disp_a_257 = a_257;
 
-			for (uint32_t b = a % 17, b_255 = b; b < a; b += 17, b_255 = addmod32(b_255, 17, 255))
-			{
-				++pcount;
-				if (gfp.check_sieve(a, b, b_255)) continue;
-				++scount;
-				gfp.check_pseq(a, b);
-			}
-		}
-
-		// a != 0 (mod 257) then check 0 < b < a such that b = 0 (mod 257) or b = a (mod 257)
-		for (uint32_t i = 1; i < 257; ++i)
-		{
-			for (uint32_t j = 0; j < 17; ++j)
-			{
-				const uint32_t a = (a_257_17 * 257 + i) * 17 + j;
-
-				for (uint32_t b = 257, b_255 = b - 255; b < a; b += 257, b_255 = addmod32(b_255, 257 - 255, 255))
+				std::ofstream ctxFile("xgfp8.ctx");
+				if (ctxFile.is_open())
 				{
-					++pcount;
-					if (gfp.check_sieve(a, b, b_255)) continue;
-					++scount;
-					gfp.check_pseq(a, b);
-				}
-
-				for (uint32_t b = a % 257, b_255 = (b >= 255) ? b - 255 : b; b < a; b += 257, b_255 = addmod32(b_255, 257 - 255, 255))
-				{
-					++pcount;
-					if (gfp.check_sieve(a, b, b_255)) continue;
-					++scount;
-					gfp.check_pseq(a, b);
+					ctxFile << a_257 << std::endl;
+					ctxFile.flush();
+					ctxFile.close();
 				}
 			}
-		}
 
-		const timer::time cur_time = timer::currentTime();
-		const double dt = timer::diffTime(cur_time, disp_time);
-		disp_time = cur_time;
-		const double K = a_257_17 * 86400.0 / dt, x = a_257_17;
-		const double da = 0.5 * (sqrt(4 * x * (x - 1) + 8 * K + 1) - 2 * x - 1);
-		const uint32_t na = (a_257_17 + 1) * 257 * 17;
-		std::cout << na << ", +" << std::setprecision(3) << 1e-6 * da * 257 * 17 << "M/day, 1/" << pcount / scount << "       \r" << std::flush;
-		pcount = scount = 0;
+			uint32_t a = a_257 * 257; init_mod(a);
 
-		std::ofstream ctxFile("xgfp8.ctx");
-		if (ctxFile.is_open())
-		{
-			ctxFile << na << std::endl;
-			ctxFile.flush();
-			ctxFile.close();
+			// a = 0 (mod 257) then check all 0 < b < a such that a + b != 0 (mod 2)
+			for (uint32_t b = (a % 2) + 1, b_255 = b; b < a; b += 2, b_255 = addmod32(b_255, 2, 255))
+			{
+#ifdef DISP_RATIO
+				++wcount;
+#endif
+				if (check_sieve(b, b_255)) continue;
+#ifdef DISP_RATIO
+				++scount;
+#endif
+				check_pseq(a, b);
+			}
+
+			// a != 0 (mod 257) then check 0 < b < a such that b = 0 (mod 257) or b = a (mod 257) and a + b != 0 (mod 2)
+			for (uint32_t i = 1; i < 257; ++i)
+			{
+				++a; add_mod(1);
+
+				uint32_t b0 = 257, b0_255 = b0 - 255;
+				if ((a + b0) % 2 == 0) { b0 += 257; b0_255 = addmod32(b0_255, 257 - 255, 255); }
+				for (uint32_t b = b0, b_255 = b0_255; b < a; b += 2 * 257, b_255 = addmod32(b_255, 2 * (257 - 255), 255))
+				{
+#ifdef DISP_RATIO
+					++wcount;
+#endif
+					if (check_sieve(b, b_255)) continue;
+#ifdef DISP_RATIO
+					++scount;
+#endif
+					check_pseq(a, b);
+				}
+
+				uint32_t ba = a % 257, ba_255 = (ba >= 255) ? ba - 255 : ba;
+				if ((a + ba) % 2 == 0) { ba += 257; ba_255 = addmod32(ba_255, 257 - 255, 255); }
+
+				for (uint32_t b = ba, b_255 = ba_255; b < a; b += 2 * 257, b_255 = addmod32(b_255, 2 * (257 - 255), 255))
+				{
+#ifdef DISP_RATIO
+					++wcount;
+#endif
+					if (check_sieve(b, b_255)) continue;
+#ifdef DISP_RATIO
+					++scount;
+#endif
+					check_pseq(a, b);
+				}
+			}
 		}
 	}
-}
+};
 
 #ifdef VALID
 static void valid()
@@ -459,11 +482,12 @@ static void valid()
 		162552757, 164334410, 168637489, 182386475, 189919346, 190611395, 203833179, 206250862, 213384510, 217336419, 233509429, 241553272, 251554684,
 		274484657, 279516296, 285124157, 290163473, 291329833, 298260240, 308235968, 314945196, 318675558, 328492003, 336810340, 337201010 };
 
+	GFP gfp;
 	for (size_t i = 0; i < n; ++i)
 	{
 		std::cout << i + 1 << ": " << std::endl;
-		const uint32_t a_257_17 = a[i] / (257 * 17);
-		check(a_257_17, a_257_17);
+		const uint32_t a_257 = a[i] / 257;
+		gfp.check(a_257, a_257);
 	}
 }
 #endif
@@ -493,12 +517,14 @@ int main(int argc, char * argv[])
 	const bool resume = (a_start < a_ctx);
 	if (resume) a_start = a_ctx;
 
-	const uint32_t a_start_257_17 = a_start / (257 * 17);
-	const uint32_t a_end_257_17 = a_end / (257 * 17) + ((a_end % (257 * 17) != 0) ? 1 : 0);
+	const uint32_t a_start_257 = a_start / 257, a_end_257 = a_end / 257 + ((a_end % 257 != 0) ? 1 : 0);
 
 	std::cout << (resume ? "Resuming from a checkpoint, t" : "T") << "esting from " << (a_start < 2 ? 2 : a_start) << " to " << a_end << std::endl;
 
-	check(a_start_257_17, a_end_257_17);
+	GFP gfp;
+	gfp.check(a_start_257, a_end_257);
+
+	// gfp.gen_sieve();
 
 	return EXIT_SUCCESS;
 }
