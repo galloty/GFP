@@ -1,5 +1,5 @@
 CC = g++ -m64 -std=c++17
-CFLAGS = -Wall -Wextra -fexceptions
+CFLAGS = -Wall -Wextra -fexceptions -fopenmp
 RFLAGS = -O3
 
 EXEC = xgfp8

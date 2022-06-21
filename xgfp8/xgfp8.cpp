@@ -20,9 +20,10 @@ The integer sequence is https://oeis.org/A343121.
 #include <functional>
 
 #include <gmp.h>
+#include <omp.h>
 
-#define	VALID
-// #define DISP_RATIO
+// #define	VALID
+// #define	DISP_RATIO
 
 #if defined (_WIN32)	// use Performance Counter
 #include <Windows.h>
@@ -96,8 +97,9 @@ static std::string header()
 static std::string usage()
 {
 	std::ostringstream ss;
-	ss << "Usage: xgfp8 <a_min> <a_max>" << std::endl;
-	ss << "   search in [a_min; a_max] (default a_min = 2, a_max = 2^32 - 1)" << std::endl << std::endl;
+	ss << "Usage: xgfp8 <a_min> <a_max> <numThreads>" << std::endl;
+	ss << "   search in [a_min; a_max] (default a_min = 2, a_max = 2^32 - 1)" << std::endl;
+	ss << "   numThreads is the number of threads (default 0 = one thread per logical CPU)" << std::endl << std::endl;
 	return ss.str();
 }
 
@@ -140,10 +142,9 @@ private:
 		241, 53, 1217, 137, 61, 673, 337, /* 401, 433, 929, 233, 101, 109, 593, 281, 1249, 43 */ };
 	static const size_t mod_size = sizeof(mod) / sizeof(uint32_t);
 
-	mpz_t two, a2n, b2n, xgfn, r;
+	mpz_t two, va2n[256], vb2n[256], vxgfn[256], vr[256];
+	const size_t nthread;
 	bool * const sieve_array;
-
-	uint32_t a_mod[mod_size], a_mod_mul[mod_size];
 
 protected:
 	static int ilog2(const uint64_t x) { return 63 - __builtin_clzll(x); }
@@ -261,25 +262,7 @@ protected:
 		return m * size_t(m) - count;
 	}
 
-	void init_mod(const uint32_t a)
-	{
-		for (size_t i = 0; i < mod_size; ++i)
-		{
-			const uint32_t m = mod[i], am = a % m;
-			a_mod[i] = am; a_mod_mul[i] = am * m;
-		}
-	}
-
-	void add_mod(const uint32_t n)
-	{
-		for (size_t i = 0; i < mod_size; ++i)
-		{
-			const uint32_t m = mod[i], am = addmod32(a_mod[i], n % m, m);
-			a_mod[i] = am; a_mod_mul[i] = am * m;
-		}
-	}
-
-	bool check_sieve(const uint32_t b, const uint32_t b_255) const
+	bool check_sieve(const uint32_t * const a_mod_mul, const uint32_t b, const uint32_t b_255) const
 	{
 		const bool * psieve = sieve_array;
 
@@ -296,9 +279,12 @@ protected:
 		return false;
 	}
 
-	void check_pseq(const uint32_t a, const uint32_t b)
+	void check_pseq(const size_t thread_id, const uint32_t a, const uint32_t b)
 	{
 		if (!prp(a + uint64_t(b))) return;
+
+		mpz_t & a2n = va2n[thread_id]; mpz_t & b2n = vb2n[thread_id];
+		mpz_t & xgfn = vxgfn[thread_id]; mpz_t & r = vr[thread_id];
 	
 		mpz_set_ui(a2n, a); mpz_set_ui(b2n, b);
 
@@ -336,7 +322,7 @@ protected:
 	}
 
 public:
-	GFP() : sieve_array(new bool[421877741])
+	GFP(const size_t n_thread) : nthread(n_thread), sieve_array(new bool[421877741])
 	{
 		bool * psieve = sieve_array;
 
@@ -348,14 +334,14 @@ public:
 		}
 		std::cout << "sieve_array size: " <<  psieve - sieve_array << std::endl;
 
-		mpz_inits(two, a2n, b2n, xgfn, r, nullptr);
-		mpz_set_ui(two, 2);
+		mpz_init_set_ui(two, 2);
+		for (size_t i = 0; i < nthread; ++i) mpz_inits(va2n[i], vb2n[i], vxgfn[i], vr[i], nullptr);
 	}
 
 	virtual ~GFP()
 	{
 		delete[] sieve_array;
-		mpz_clears(two, a2n, b2n, xgfn, r, nullptr);
+		for (size_t i = 0; i < nthread; ++i) mpz_clears(va2n[i], vb2n[i], vxgfn[i], vr[i], nullptr);
 	}
 
 	void gen_sieve() const
@@ -394,17 +380,15 @@ public:
 		size_t wcount = 0, scount = 0;
 #endif
 
-		for (uint32_t a_257 = a_start_257; a_257 <= a_end_257; ++a_257)
+		for (uint32_t a_257 = a_start_257; a_257 <= a_end_257; a_257 += 16 * nthread)
 		{
 			const timer::time cur_time = timer::currentTime();
 			const double dt = timer::diffTime(cur_time, disp_time);
-			if (dt > 5)
+			if (dt > 10)
 			{
 				disp_time = cur_time;
-				double s = 0; for (uint32_t i = disp_a_257; i < a_257; ++i) s += i;
-				const double K = s * 86400.0 / dt, x = a_257;
-				const double da = 0.5 * (sqrt(4 * x * (x - 1) + 8 * K + 1) - 2 * x - 1);
-				std::cout << a_257 * 257 << ", +" << std::setprecision(3) << 1e-6 * da * 257 << "M/day";
+				const double da = (a_257 - disp_a_257) / dt;
+				std::cout << a_257 * 257 << ", +" << std::setprecision(3) << da << ", " << 1e-6 * 86400 * da * 257 << "M/day";
 #ifdef DISP_RATIO
 				std::cout << ", 1/" << wcount / scount;
 				wcount = scount = 0;
@@ -415,59 +399,76 @@ public:
 				std::ofstream ctxFile("xgfp8.ctx");
 				if (ctxFile.is_open())
 				{
-					ctxFile << a_257 << std::endl;
+					ctxFile << a_257 * 257 << std::endl;
 					ctxFile.flush();
 					ctxFile.close();
 				}
 			}
 
-			uint32_t a = a_257 * 257; init_mod(a);
-
-			// a = 0 (mod 257) then check all 0 < b < a such that a + b != 0 (mod 2)
-			for (uint32_t b = (a % 2) + 1, b_255 = b; b < a; b += 2, b_255 = addmod32(b_255, 2, 255))
+#pragma omp parallel for schedule(dynamic)
+			for (size_t j = 0; j < 16 * nthread; ++j)
 			{
-#ifdef DISP_RATIO
-				++wcount;
-#endif
-				if (check_sieve(b, b_255)) continue;
-#ifdef DISP_RATIO
-				++scount;
-#endif
-				check_pseq(a, b);
-			}
+				const size_t thread_id = size_t(omp_get_thread_num());
 
-			// a != 0 (mod 257) then check 0 < b < a such that b = 0 (mod 257) or b = a (mod 257) and a + b != 0 (mod 2)
-			for (uint32_t i = 1; i < 257; ++i)
-			{
-				++a; add_mod(1);
-
-				uint32_t b0 = 257, b0_255 = b0 - 255;
-				if ((a + b0) % 2 == 0) { b0 += 257; b0_255 = addmod32(b0_255, 257 - 255, 255); }
-				for (uint32_t b = b0, b_255 = b0_255; b < a; b += 2 * 257, b_255 = addmod32(b_255, 2 * (257 - 255), 255))
+				uint32_t a = (a_257 + j) * 257;
+				uint32_t a_mod[mod_size], a_mod_mul[mod_size];
+				for (size_t i = 0; i < mod_size; ++i)
 				{
-#ifdef DISP_RATIO
-					++wcount;
-#endif
-					if (check_sieve(b, b_255)) continue;
-#ifdef DISP_RATIO
-					++scount;
-#endif
-					check_pseq(a, b);
+					const uint32_t m = mod[i], am = a % m;
+					a_mod[i] = am; a_mod_mul[i] = am * m;
 				}
 
-				uint32_t ba = a % 257, ba_255 = (ba >= 255) ? ba - 255 : ba;
-				if ((a + ba) % 2 == 0) { ba += 257; ba_255 = addmod32(ba_255, 257 - 255, 255); }
-
-				for (uint32_t b = ba, b_255 = ba_255; b < a; b += 2 * 257, b_255 = addmod32(b_255, 2 * (257 - 255), 255))
+				// a = 0 (mod 257) then check all 0 < b < a such that a + b != 0 (mod 2)
+				for (uint32_t b = (a % 2) + 1, b_255 = b; b < a; b += 2, b_255 = addmod32(b_255, 2, 255))
 				{
 #ifdef DISP_RATIO
 					++wcount;
 #endif
-					if (check_sieve(b, b_255)) continue;
+					if (check_sieve(a_mod_mul, b, b_255)) continue;
 #ifdef DISP_RATIO
 					++scount;
 #endif
-					check_pseq(a, b);
+					check_pseq(thread_id, a, b);
+				}
+
+				// a != 0 (mod 257) then check 0 < b < a such that b = 0 (mod 257) or b = a (mod 257) and a + b != 0 (mod 2)
+				for (uint32_t i = 1; i < 257; ++i)
+				{
+					++a;
+					for (size_t i = 0; i < mod_size; ++i)
+					{
+						const uint32_t m = mod[i], am = addmod32(a_mod[i], 1, m);
+						a_mod[i] = am; a_mod_mul[i] = am * m;
+					}
+
+					uint32_t b0 = 257, b0_255 = b0 - 255;
+					if ((a + b0) % 2 == 0) { b0 += 257; b0_255 = addmod32(b0_255, 257 - 255, 255); }
+					for (uint32_t b = b0, b_255 = b0_255; b < a; b += 2 * 257, b_255 = addmod32(b_255, 2 * (257 - 255), 255))
+					{
+#ifdef DISP_RATIO
+						++wcount;
+#endif
+						if (check_sieve(a_mod_mul, b, b_255)) continue;
+#ifdef DISP_RATIO
+						++scount;
+#endif
+						check_pseq(thread_id, a, b);
+					}
+
+					uint32_t ba = a % 257, ba_255 = (ba >= 255) ? ba - 255 : ba;
+					if ((a + ba) % 2 == 0) { ba += 257; ba_255 = addmod32(ba_255, 257 - 255, 255); }
+
+					for (uint32_t b = ba, b_255 = ba_255; b < a; b += 2 * 257, b_255 = addmod32(b_255, 2 * (257 - 255), 255))
+					{
+#ifdef DISP_RATIO
+						++wcount;
+#endif
+						if (check_sieve(a_mod_mul, b, b_255)) continue;
+#ifdef DISP_RATIO
+						++scount;
+#endif
+						check_pseq(thread_id, a, b);
+					}
 				}
 			}
 		}
@@ -475,14 +476,14 @@ public:
 };
 
 #ifdef VALID
-static void valid()
+static void valid(const size_t n_thread)
 {
 	const size_t n = 36;
 	static constexpr uint32_t a[n] = { 26507494, 56984867, 62055998, 63491771, 89616928, 113780846, 134733857, 139403406, 151032318, 152120099, 160853473,
 		162552757, 164334410, 168637489, 182386475, 189919346, 190611395, 203833179, 206250862, 213384510, 217336419, 233509429, 241553272, 251554684,
 		274484657, 279516296, 285124157, 290163473, 291329833, 298260240, 308235968, 314945196, 318675558, 328492003, 336810340, 337201010 };
 
-	GFP gfp;
+	GFP gfp(n_thread);
 	for (size_t i = 0; i < n; ++i)
 	{
 		std::cout << i + 1 << ": " << std::endl;
@@ -499,9 +500,19 @@ int main(int argc, char * argv[])
 
 	const uint32_t a_min = (argc > 1) ? uint32_t(std::atoll(argv[1])) : 2;
 	const uint32_t a_max = (argc > 2) ? uint32_t(std::atoll(argv[2])) : uint32_t(-1);
+	const int numThreads = (argc > 3) ? std::atoi(argv[3]) : 0;
+
+	if (numThreads != 0) omp_set_num_threads(numThreads);
+
+	size_t n_thread = 1;
+#pragma omp parallel
+{
+	n_thread = omp_get_num_threads();
+}
+	std::cout << n_thread << " thread(s)" << std::endl;
 
 #ifdef VALID
-	valid();
+	valid(n_thread);
 	return EXIT_SUCCESS;
 #endif
 
@@ -521,7 +532,7 @@ int main(int argc, char * argv[])
 
 	std::cout << (resume ? "Resuming from a checkpoint, t" : "T") << "esting from " << (a_start < 2 ? 2 : a_start) << " to " << a_end << std::endl;
 
-	GFP gfp;
+	GFP gfp(n_thread);
 	gfp.check(a_start_257, a_end_257);
 
 	// gfp.gen_sieve();
