@@ -15,6 +15,7 @@ The integer sequence is https://oeis.org/A343121.
 #include <fstream>
 #include <sstream>
 #include <iomanip>
+#include <mutex>
 
 #include <vector>
 #include <functional>
@@ -105,6 +106,9 @@ static std::string usage()
 
 static void output(const uint32_t a, const uint32_t b, const int n)
 {
+	static std::mutex output_mutex;
+	const std::lock_guard<std::mutex> lock(output_mutex);
+
 	std::cout << "                               \r" << a << ", " << b << "\t" << "xGFP-" << n << std::endl;
 
 	if (n >= 8)
@@ -133,14 +137,30 @@ inline uint64_t addmod64(const uint64_t x, const uint64_t y, const uint64_t m)
 
 inline uint64_t mul_hi(const uint64_t x, const uint64_t y) { return uint64_t((x * __uint128_t(y)) >> 64); }
 
+static const size_t vsize = 8;
+typedef uint32_t vec[vsize] __attribute__((aligned(32)));	// ymm registers
+
+static constexpr vec vone = { 1, 1, 1, 1, 1, 1, 1, 1 };
+
+inline void vaddmod(vec & z, const vec & x, const vec & y, const vec & m)
+{
+#pragma omp simd aligned(z, x, y, m : 32)
+	for (size_t k = 0; k < vsize; ++k) z[k] = addmod32(x[k], y[k], m[k]);
+}
+
+inline void vmul(vec & z, const vec & x, const vec & y)
+{
+#pragma omp simd aligned(z, x, y : 32)
+	for (size_t k = 0; k < vsize; ++k) z[k] = x[k] * y[k];
+}
 
 class GFP
 {
 private:
-	static constexpr uint32_t mod[] = {
-		3 * 5 * 17, 7 * 97, 13 * 41, 769, 193, 641, 11 * 37, 23 * 29, 449, 113, 1153, 577, 73, 1409, 353, 19 * 31, 89,
-		241, 53, 1217, 137, 61, 673, 337, /* 401, 433, 929, 233, 101, 109, 593, 281, 1249, 43 */ };
-	static const size_t mod_size = sizeof(mod) / sizeof(uint32_t);
+	static const size_t msize = 3;
+	static constexpr vec mod[msize] = { { 3 * 5 * 17, 7 * 97, 13 * 41, 769, 193, 641, 11 * 37, 23 * 29 },
+										{ 449, 113, 1153, 577, 73, 1409, 353, 19 * 31 },
+										{ 89, 241, 53, 1217, 137, 61, 673, 337 } };
 
 	mpz_t two, va2n[256], vb2n[256], vxgfn[256], vr[256];
 	const size_t nthread;
@@ -221,8 +241,9 @@ protected:
 	static size_t fill_sieve(bool * const sieve, const uint32_t m)
 	{
 		size_t count = 0;
+		const size_t m2 = m * size_t(m);
 
-		for (size_t i = 0; i < m * size_t(m); ++i) sieve[i] = false;
+		for (size_t i = 0; i < m2; ++i) sieve[i] = false;
 
 		for (uint32_t a = 0; a < m; ++a)
 		{
@@ -250,6 +271,9 @@ protected:
 			}
 		}
 
+		const size_t left =  m2 - count;
+		// std::cout << m << ": " << left / double(m2) << std::endl;
+
 		// for (size_t i = 0; i < m; ++i)
 		// {
 		// 	for (size_t j = 0; j < m; ++j)
@@ -259,23 +283,42 @@ protected:
 		// 	std::cout << std::endl;
 		// }
 
-		return m * size_t(m) - count;
+		return left;
 	}
 
-	bool check_sieve(const uint32_t * const a_mod_mul, const uint32_t b, const uint32_t b_255) const
+	bool check_sieve(const vec * const a_mod_mul, const uint32_t b, const uint32_t b_0) const
 	{
 		const bool * psieve = sieve_array;
 
-		if (psieve[a_mod_mul[0] + b_255] != 0) return true;
-		psieve += 255 * 255;
+		const vec & am0 = a_mod_mul[0];
+		const vec & m0 =  mod[0];
+
+		if (psieve[am0[0] + b_0]) return true;
+		psieve += m0[0] * m0[0];
 
 #pragma GCC unroll 100
-		for (size_t i = 1; i < mod_size; ++i)
+		for (size_t i = 1; i < vsize; ++i)
 		{
-			const uint32_t p = mod[i];
-			if (psieve[a_mod_mul[i] + (b % p)] != 0) return true;
-			psieve += p * p;
+			const uint32_t m = m0[i];
+			if (psieve[am0[i] + (b % m)]) return true;
+			psieve += m * m;
 		}
+
+#pragma GCC unroll 100
+		for (size_t j = 1; j < msize; ++j)
+		{
+			const vec & amj = a_mod_mul[j];
+			const vec & mj =  mod[j];
+
+#pragma GCC unroll 100
+			for (size_t i = 0; i < vsize; ++i)
+			{
+				const uint32_t m = mj[i];
+				if (psieve[amj[i] + (b % m)]) return true;
+				psieve += m * m;
+			}
+		}
+
 		return false;
 	}
 
@@ -326,11 +369,14 @@ public:
 	{
 		bool * psieve = sieve_array;
 
-		for (size_t i = 0; i < mod_size; ++i)
+		for (size_t j = 0; j < msize; ++j)
 		{
-			const uint32_t & p = mod[i];
-			fill_sieve(psieve, p);
-			psieve += p * p;
+			for (size_t i = 0; i < vsize; ++i)
+			{
+				const uint32_t m = mod[j][i];
+				fill_sieve(psieve, m);
+				psieve += m * m;
+			}
 		}
 		std::cout << "sieve_array size: " <<  psieve - sieve_array << std::endl;
 
@@ -357,7 +403,6 @@ public:
 			if (!prm) continue;
 			const double weight = fill_sieve(sieve, p) / (p * double(p));
 			weights.push_back(std::make_pair(p, weight));
-			std::cout << p << ": " << weight << std::endl;
 		}
 		delete[] sieve;
 
@@ -380,7 +425,9 @@ public:
 		size_t wcount = 0, scount = 0;
 #endif
 
-		for (uint32_t a_257 = a_start_257; a_257 <= a_end_257; a_257 += 16 * nthread)
+		const uint32_t a_step_257 = (nthread == 1) ? 1 : 16 * nthread;
+
+		for (uint32_t a_257 = a_start_257; a_257 <= a_end_257; a_257 += a_step_257)
 		{
 			const timer::time cur_time = timer::currentTime();
 			const double dt = timer::diffTime(cur_time, disp_time);
@@ -388,7 +435,7 @@ public:
 			{
 				disp_time = cur_time;
 				const double da = (a_257 - disp_a_257) / dt;
-				std::cout << a_257 * 257 << ", +" << std::setprecision(3) << da << ", " << 1e-6 * 86400 * da * 257 << "M/day";
+				std::cout << a_257 * 257 << ", +" << std::setprecision(3) << 1e-6 * 86400 * da * 257 << "M/day";
 #ifdef DISP_RATIO
 				std::cout << ", 1/" << wcount / scount;
 				wcount = scount = 0;
@@ -406,68 +453,73 @@ public:
 			}
 
 #pragma omp parallel for schedule(dynamic)
-			for (size_t j = 0; j < 16 * nthread; ++j)
+			for (size_t a_257_s = 0; a_257_s < a_step_257; ++a_257_s)
 			{
 				const size_t thread_id = size_t(omp_get_thread_num());
 
-				uint32_t a = (a_257 + j) * 257;
-				uint32_t a_mod[mod_size], a_mod_mul[mod_size];
-				for (size_t i = 0; i < mod_size; ++i)
+				uint32_t a = (a_257 + a_257_s) * 257;
+				vec a_mod[msize];
+#pragma GCC unroll 100
+				for (size_t j = 0; j < msize; ++j)
 				{
-					const uint32_t m = mod[i], am = a % m;
-					a_mod[i] = am; a_mod_mul[i] = am * m;
+#pragma GCC unroll 100
+					for (size_t i = 0; i < vsize; ++i) a_mod[j][i] = a % mod[j][i];
 				}
+				vec a_mod_mul[msize]; for (size_t i = 0; i < msize; ++i) vmul(a_mod_mul[i], a_mod[i], mod[i]);
+				const uint32_t m_0 = 255;	// mod[0][0];
 
 				// a = 0 (mod 257) then check all 0 < b < a such that a + b != 0 (mod 2)
-				for (uint32_t b = (a % 2) + 1, b_255 = b; b < a; b += 2, b_255 = addmod32(b_255, 2, 255))
+				for (uint32_t b = (a % 2) + 1, b_0 = b; b < a; b += 2, b_0 = addmod32(b_0, 2, m_0))
 				{
 #ifdef DISP_RATIO
 					++wcount;
 #endif
-					if (check_sieve(a_mod_mul, b, b_255)) continue;
+					if (!check_sieve(a_mod_mul, b, b_0))
+					{
 #ifdef DISP_RATIO
-					++scount;
+						++scount;
 #endif
-					check_pseq(thread_id, a, b);
+						check_pseq(thread_id, a, b);
+					}
 				}
 
 				// a != 0 (mod 257) then check 0 < b < a such that b = 0 (mod 257) or b = a (mod 257) and a + b != 0 (mod 2)
-				for (uint32_t i = 1; i < 257; ++i)
+				for (uint32_t j = 1; j < 257; ++j)
 				{
 					++a;
-					for (size_t i = 0; i < mod_size; ++i)
-					{
-						const uint32_t m = mod[i], am = addmod32(a_mod[i], 1, m);
-						a_mod[i] = am; a_mod_mul[i] = am * m;
-					}
+					for (size_t i = 0; i < msize; ++i) vaddmod(a_mod[i], a_mod[i], vone, mod[i]);
+					for (size_t i = 0; i < msize; ++i) vmul(a_mod_mul[i], a_mod[i], mod[i]);
 
-					uint32_t b0 = 257, b0_255 = b0 - 255;
-					if ((a + b0) % 2 == 0) { b0 += 257; b0_255 = addmod32(b0_255, 257 - 255, 255); }
-					for (uint32_t b = b0, b_255 = b0_255; b < a; b += 2 * 257, b_255 = addmod32(b_255, 2 * (257 - 255), 255))
+					for (uint32_t b = (a % 2 == 0) ? 257 : 2 * 257, b_0 = (a % 2 == 0) ? 257 - m_0 : 2 * (257 - m_0); b < a;
+								  b += 2 * 257, b_0 = addmod32(b_0, 2 * (257 - m_0), m_0))
 					{
 #ifdef DISP_RATIO
 						++wcount;
 #endif
-						if (check_sieve(a_mod_mul, b, b_255)) continue;
+						if (!check_sieve(a_mod_mul, b, b_0))
+						{
 #ifdef DISP_RATIO
-						++scount;
+							++scount;
 #endif
-						check_pseq(thread_id, a, b);
+							check_pseq(thread_id, a, b);
+						}
 					}
 
-					uint32_t ba = a % 257, ba_255 = (ba >= 255) ? ba - 255 : ba;
-					if ((a + ba) % 2 == 0) { ba += 257; ba_255 = addmod32(ba_255, 257 - 255, 255); }
-
-					for (uint32_t b = ba, b_255 = ba_255; b < a; b += 2 * 257, b_255 = addmod32(b_255, 2 * (257 - 255), 255))
+					const uint32_t am257 = a % 257, am257m_0 = (am257 >= m_0) ? am257 - m_0 : am257;
+					const bool pcond = ((a + am257) % 2 != 0);
+					for (uint32_t b = pcond ? am257 : am257 + 257, b_0 = pcond ? am257m_0 : addmod32(am257m_0, 257 - m_0, m_0); b < a;
+								  b += 2 * 257, b_0 = addmod32(b_0, 2 * (257 - m_0), m_0))
 					{
 #ifdef DISP_RATIO
 						++wcount;
 #endif
-						if (check_sieve(a_mod_mul, b, b_255)) continue;
+						if (!check_sieve(a_mod_mul, b, b_0))
+						{
 #ifdef DISP_RATIO
-						++scount;
+							++scount;
 #endif
-						check_pseq(thread_id, a, b);
+							check_pseq(thread_id, a, b);
+						}
 					}
 				}
 			}
