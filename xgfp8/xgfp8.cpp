@@ -460,7 +460,7 @@ public:
 				const double ops = (op_count(a_257) - op_count(disp_a_257)) / dt;
 				disp_a_257 = a_257;
 				const double a_day_257 = next_a_257(a_257, 86400 * ops);
-				std::cout << a_257 * 257 << ", +" << (1e-6 * (a_day_257 - a_257) * 257) << "M/day" << std::endl;
+				std::cout << a_257 * 257 << ", +" << int(1e-6 * (a_day_257 - a_257) * 257) << "M/day";
 #ifdef DISP_RATIO
 				std::cout << ", 1/" << wcount / scount;
 				wcount = scount = 0;
