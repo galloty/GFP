@@ -99,12 +99,12 @@ static std::string usage()
 {
 	std::ostringstream ss;
 	ss << "Usage: xgfp8 <a_min> <a_max> <numThreads>" << std::endl;
-	ss << "   search in [a_min; a_max] (default a_min = 2, a_max = 2^32 - 1)" << std::endl;
+	ss << "   search in [a_min; a_max] (default a_min = 2, a_max = 10^18)" << std::endl;
 	ss << "   numThreads is the number of threads (default 0 = one thread per logical CPU)" << std::endl << std::endl;
 	return ss.str();
 }
 
-static void output(const uint32_t a, const uint32_t b, const int n)
+static void output(const uint64_t a, const uint64_t b, const int n)
 {
 	static std::mutex output_mutex;
 	const std::lock_guard<std::mutex> lock(output_mutex);
@@ -154,13 +154,20 @@ inline void vmul(vec & z, const vec & x, const vec & y)
 	for (size_t k = 0; k < vsize; ++k) z[k] = x[k] * y[k];
 }
 
+inline void mpz_set_ui_64(mpz_t rop, const uint64_t n)
+{
+	mpz_set_ui(rop, 1); rop->_mp_d[0] = n;
+}
+
 class GFP
 {
 private:
-	static const size_t msize = 3;
+	static const size_t msize = 4;
 	static constexpr vec mod[msize] = { { 3 * 5 * 17, 7 * 97, 13 * 41, 769, 193, 641, 11 * 37, 23 * 29 },
 										{ 449, 113, 1153, 577, 73, 1409, 353, 19 * 31 },
-										{ 89, 241, 53, 1217, 137, 61, 673, 337 } };
+										{ 89, 241, 53, 1217, 137, 61, 673, 337 },
+										{ 401, 433, 929, 233, 101, 109, 593, 281 } };
+										// { 1249, 43, 313, 47, 149, 157, 173, 409 }
 
 	mpz_t two, va2n[256], vb2n[256], vxgfn[256], vr[256];
 	const size_t nthread;
@@ -286,7 +293,7 @@ protected:
 		return left;
 	}
 
-	bool check_sieve(const vec * const a_mod_mul, const uint32_t b, const uint32_t b_0) const
+	bool check_sieve(const vec * const a_mod_mul, const uint64_t b, const uint32_t b_0) const
 	{
 		const bool * psieve = sieve_array;
 
@@ -322,14 +329,14 @@ protected:
 		return false;
 	}
 
-	void check_pseq(const size_t thread_id, const uint32_t a, const uint32_t b)
+	void check_pseq(const size_t thread_id, const uint64_t a, const uint64_t b)
 	{
-		if (!prp(a + uint64_t(b))) return;
+		if (!prp(a + b)) return;
 
 		mpz_t & a2n = va2n[thread_id]; mpz_t & b2n = vb2n[thread_id];
 		mpz_t & xgfn = vxgfn[thread_id]; mpz_t & r = vr[thread_id];
 	
-		mpz_set_ui(a2n, a); mpz_set_ui(b2n, b);
+		mpz_set_ui_64(a2n, a); mpz_set_ui_64(b2n, b);
 
 		const int n_min = 8 - 1;
 		int n = 1;
@@ -348,7 +355,7 @@ protected:
 
 		if (n == n_min)
 		{
-			mpz_set_ui(a2n, a); mpz_set_ui(b2n, b);
+			mpz_set_ui_64(a2n, a); mpz_set_ui_64(b2n, b);
 
 			n = 0;
 			while (true)
@@ -365,7 +372,7 @@ protected:
 	}
 
 public:
-	GFP(const size_t n_thread) : nthread(n_thread), sieve_array(new bool[421877741])
+	GFP(const size_t n_thread) : nthread(n_thread), sieve_array(new bool[11000000])
 	{
 		bool * psieve = sieve_array;
 
@@ -378,7 +385,7 @@ public:
 				psieve += m * m;
 			}
 		}
-		std::cout << "sieve_array size: " <<  psieve - sieve_array << std::endl;
+		// std::cout << "sieve_array size: " <<  psieve - sieve_array << std::endl;
 
 		mpz_init_set_ui(two, 2);
 		for (size_t i = 0; i < nthread; ++i) mpz_inits(va2n[i], vb2n[i], vxgfn[i], vr[i], nullptr);
@@ -412,7 +419,23 @@ public:
 		for (size_t i = 0; i < count; ++i) std::cout << weights[i].first << ": " << weights[i].second << std::endl;
 	}
 
-	void check(const uint32_t a_start_257, const uint32_t a_end_257)
+	static double op_count(const double a_257) { return 1.5 * a_257 * (a_257 + 1); }
+
+	static double next_a_257(const double a_start_257, const double op_cnt)
+	{
+		const double count = op_count(a_start_257) + op_cnt;
+
+		double a_min = a_start_257, a_max = 1e12;
+		while (fabs(a_max - a_min) >= 1)
+		{
+			const double a_half = 0.5 * (a_min + a_max);
+			if (op_count(a_half) < count) a_min = a_half; else a_max = a_half;
+		}
+
+		return 0.5 * (a_min + a_max);
+	}
+
+	void check(const uint64_t a_start_257, const uint64_t a_end_257)
 	{
 #ifdef GEN_SIEVE
 		gen_sieve();
@@ -420,28 +443,29 @@ public:
 #endif
 
 		timer::time disp_time = timer::currentTime();
-		uint32_t disp_a_257 = a_start_257;
+		uint64_t disp_a_257 = a_start_257;
 #ifdef DISP_RATIO
 		size_t wcount = 0, scount = 0;
 #endif
 
-		const uint32_t a_step_257 = (nthread == 1) ? 1 : 16 * nthread;
+		const uint64_t a_step_257 = (nthread == 1) ? 1 : 16 * nthread;
 
-		for (uint32_t a_257 = a_start_257; a_257 <= a_end_257; a_257 += a_step_257)
+		for (uint64_t a_257 = a_start_257; a_257 <= a_end_257; a_257 += a_step_257)
 		{
 			const timer::time cur_time = timer::currentTime();
 			const double dt = timer::diffTime(cur_time, disp_time);
 			if (dt > 10)
 			{
 				disp_time = cur_time;
-				const double da = (a_257 - disp_a_257) / dt;
-				std::cout << a_257 * 257 << ", +" << std::setprecision(3) << 1e-6 * 86400 * da * 257 << "M/day";
+				const double ops = (op_count(a_257) - op_count(disp_a_257)) / dt;
+				disp_a_257 = a_257;
+				const double a_day_257 = next_a_257(a_257, 86400 * ops);
+				std::cout << a_257 * 257 << ", +" << (1e-6 * (a_day_257 - a_257) * 257) << "M/day" << std::endl;
 #ifdef DISP_RATIO
 				std::cout << ", 1/" << wcount / scount;
 				wcount = scount = 0;
 #endif
 				std::cout << "       \r" << std::flush;
-				disp_a_257 = a_257;
 
 				std::ofstream ctxFile("xgfp8.ctx");
 				if (ctxFile.is_open())
@@ -453,11 +477,11 @@ public:
 			}
 
 #pragma omp parallel for schedule(dynamic)
-			for (size_t a_257_s = 0; a_257_s < a_step_257; ++a_257_s)
+			for (uint64_t a_257_s = 0; a_257_s < a_step_257; ++a_257_s)
 			{
 				const size_t thread_id = size_t(omp_get_thread_num());
 
-				uint32_t a = (a_257 + a_257_s) * 257;
+				uint64_t a = (a_257 + a_257_s) * 257;
 				vec a_mod[msize];
 #pragma GCC unroll 100
 				for (size_t j = 0; j < msize; ++j)
@@ -469,7 +493,9 @@ public:
 				const uint32_t m_0 = 255;	// mod[0][0];
 
 				// a = 0 (mod 257) then check all 0 < b < a such that a + b != 0 (mod 2)
-				for (uint32_t b = (a % 2) + 1, b_0 = b; b < a; b += 2, b_0 = addmod32(b_0, 2, m_0))
+				uint32_t b_0 = uint32_t(a % 2) + 1;
+				uint64_t b = b_0;
+				for (; b < a; b_0 = addmod32(b_0, 2, m_0), b += 2)
 				{
 #ifdef DISP_RATIO
 					++wcount;
@@ -484,14 +510,15 @@ public:
 				}
 
 				// a != 0 (mod 257) then check 0 < b < a such that b = 0 (mod 257) or b = a (mod 257) and a + b != 0 (mod 2)
-				for (uint32_t j = 1; j < 257; ++j)
+				for (size_t j = 1; j < 257; ++j)
 				{
 					++a;
 					for (size_t i = 0; i < msize; ++i) vaddmod(a_mod[i], a_mod[i], vone, mod[i]);
 					for (size_t i = 0; i < msize; ++i) vmul(a_mod_mul[i], a_mod[i], mod[i]);
 
-					for (uint32_t b = (a % 2 == 0) ? 257 : 2 * 257, b_0 = (a % 2 == 0) ? 257 - m_0 : 2 * (257 - m_0); b < a;
-								  b += 2 * 257, b_0 = addmod32(b_0, 2 * (257 - m_0), m_0))
+					b_0 = (a % 2 == 0) ? 257 - m_0 : 2 * (257 - m_0);
+					b = (a % 2 == 0) ? 257 : 2 * 257;
+					for (; b < a; b_0 = addmod32(b_0, 2 * (257 - m_0), m_0), b += 2 * 257)
 					{
 #ifdef DISP_RATIO
 						++wcount;
@@ -505,10 +532,11 @@ public:
 						}
 					}
 
-					const uint32_t am257 = a % 257, am257m_0 = (am257 >= m_0) ? am257 - m_0 : am257;
+					const uint32_t am257 = uint32_t(a % 257), am257m_0 = (am257 >= m_0) ? am257 - m_0 : am257;
 					const bool pcond = ((a + am257) % 2 != 0);
-					for (uint32_t b = pcond ? am257 : am257 + 257, b_0 = pcond ? am257m_0 : addmod32(am257m_0, 257 - m_0, m_0); b < a;
-								  b += 2 * 257, b_0 = addmod32(b_0, 2 * (257 - m_0), m_0))
+					b_0 = pcond ? am257m_0 : addmod32(am257m_0, 257 - m_0, m_0);
+					b = pcond ? am257 : am257 + 257;
+					for (; b < a; b_0 = addmod32(b_0, 2 * (257 - m_0), m_0), b += 2 * 257)
 					{
 #ifdef DISP_RATIO
 						++wcount;
@@ -531,7 +559,7 @@ public:
 static void valid(const size_t n_thread)
 {
 	const size_t n = 36;
-	static constexpr uint32_t a[n] = { 26507494, 56984867, 62055998, 63491771, 89616928, 113780846, 134733857, 139403406, 151032318, 152120099, 160853473,
+	static constexpr uint64_t a[n] = { 26507494, 56984867, 62055998, 63491771, 89616928, 113780846, 134733857, 139403406, 151032318, 152120099, 160853473,
 		162552757, 164334410, 168637489, 182386475, 189919346, 190611395, 203833179, 206250862, 213384510, 217336419, 233509429, 241553272, 251554684,
 		274484657, 279516296, 285124157, 290163473, 291329833, 298260240, 308235968, 314945196, 318675558, 328492003, 336810340, 337201010 };
 
@@ -539,7 +567,7 @@ static void valid(const size_t n_thread)
 	for (size_t i = 0; i < n; ++i)
 	{
 		std::cout << i + 1 << ": " << std::endl;
-		const uint32_t a_257 = a[i] / 257;
+		const uint64_t a_257 = a[i] / 257;
 		gfp.check(a_257, a_257);
 	}
 }
@@ -550,8 +578,8 @@ int main(int argc, char * argv[])
 	std::cout << header();
 	std::cout << usage();
 
-	const uint32_t a_min = (argc > 1) ? uint32_t(std::atoll(argv[1])) : 2;
-	const uint32_t a_max = (argc > 2) ? uint32_t(std::atoll(argv[2])) : uint32_t(-1);
+	const uint64_t a_min = (argc > 1) ? std::atoll(argv[1]) : 2;
+	const uint64_t a_max = (argc > 2) ? std::atoll(argv[2]) : 1000000000000000000ull;
 	const int numThreads = (argc > 3) ? std::atoi(argv[3]) : 0;
 
 	if (numThreads != 0) omp_set_num_threads(numThreads);
@@ -561,6 +589,7 @@ int main(int argc, char * argv[])
 {
 	n_thread = omp_get_num_threads();
 }
+	if (n_thread > 256) n_thread = 256;
 	std::cout << n_thread << " thread(s)" << std::endl;
 
 #ifdef VALID
@@ -568,7 +597,7 @@ int main(int argc, char * argv[])
 	return EXIT_SUCCESS;
 #endif
 
-	uint32_t a_ctx = 0;
+	uint64_t a_ctx = 0;
 	std::ifstream ctxFile("xgfp8.ctx");
 	if (ctxFile.is_open())
 	{
@@ -576,11 +605,11 @@ int main(int argc, char * argv[])
 		ctxFile.close();
 	}
 
-	uint32_t a_start = a_min, a_end = a_max;
+	uint64_t a_start = a_min, a_end = a_max;
 	const bool resume = (a_start < a_ctx);
 	if (resume) a_start = a_ctx;
 
-	const uint32_t a_start_257 = a_start / 257, a_end_257 = a_end / 257 + ((a_end % 257 != 0) ? 1 : 0);
+	const uint64_t a_start_257 = a_start / 257, a_end_257 = a_end / 257 + ((a_end % 257 != 0) ? 1 : 0);
 
 	std::cout << (resume ? "Resuming from a checkpoint, t" : "T") << "esting from " << (a_start < 2 ? 2 : a_start) << " to " << a_end << std::endl;
 
